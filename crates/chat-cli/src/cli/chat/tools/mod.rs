@@ -1,3 +1,4 @@
+pub mod commands; // NEW: Add commands module
 pub mod custom_tool;
 pub mod delegate;
 pub mod execute;
@@ -21,6 +22,7 @@ use std::path::{
     PathBuf,
 };
 
+use commands::Commands; // NEW: Add commands import
 use crossterm::queue;
 use crossterm::style::{
     self,
@@ -73,6 +75,7 @@ pub const NATIVE_TOOLS: [&str; 9] = [
     "use_aws",
     "gh_issue",
     "knowledge",
+    "commands", // NEW: Add commands to tool names
     "thinking",
     "todo_list",
     "delegate",
@@ -90,6 +93,7 @@ pub enum Tool {
     GhIssue(GhIssue),
     Introspect(Introspect),
     Knowledge(Knowledge),
+    Commands(Commands), // NEW: Add Commands variant
     Thinking(Thinking),
     Todo(TodoList),
     Delegate(Delegate),
@@ -110,6 +114,7 @@ impl Tool {
             Tool::GhIssue(_) => "gh_issue",
             Tool::Introspect(_) => "introspect",
             Tool::Knowledge(_) => "knowledge",
+            Tool::Commands(_) => "commands", // NEW: Add commands name
             Tool::Thinking(_) => "thinking (prerelease)",
             Tool::Todo(_) => "todo_list",
             Tool::Delegate(_) => "delegate",
@@ -131,6 +136,7 @@ impl Tool {
             Tool::Todo(_) => PermissionEvalResult::Allow,
             Tool::Knowledge(knowledge) => knowledge.eval_perm(os, agent),
             Tool::Delegate(_) => PermissionEvalResult::Allow, // Allow delegate tool
+            Tool::Commands(_) => PermissionEvalResult::Ask, // NEW: Same permission level as knowledge
         }
     }
 
@@ -152,6 +158,7 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.invoke(os, stdout).await,
             Tool::Introspect(introspect) => introspect.invoke(os, stdout).await,
             Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout, active_agent).await,
+            Tool::Commands(commands) => commands.invoke(os, stdout).await, // NEW: Add commands invoke
             Tool::Thinking(think) => think.invoke(stdout).await,
             Tool::Todo(todo) => todo.invoke(os, stdout).await,
             Tool::Delegate(delegate) => delegate.invoke(os, stdout, agents).await,
@@ -169,6 +176,8 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(output),
             Tool::Introspect(_) => Introspect::queue_description(output),
             Tool::Knowledge(knowledge) => knowledge.queue_description(os, output).await,
+            Tool::Commands(commands) => commands.queue_description(os, output).await, // NEW: Add commands
+            // queue_description
             Tool::Thinking(thinking) => thinking.queue_description(output),
             Tool::Todo(_) => Ok(()),
             Tool::Delegate(delegate) => delegate.queue_description(output),
@@ -186,6 +195,7 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.validate(os).await,
             Tool::Introspect(introspect) => introspect.validate(os).await,
             Tool::Knowledge(knowledge) => knowledge.validate(os).await,
+            Tool::Commands(commands) => commands.validate(os).await, // NEW: Add commands validate
             Tool::Thinking(think) => think.validate(os).await,
             Tool::Todo(todo) => todo.validate(os).await,
             Tool::Delegate(_) => Ok(()), // No validation needed for delegate tool
