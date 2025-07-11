@@ -1,6 +1,7 @@
 pub mod changelog;
 pub mod checkpoint;
 pub mod clear;
+pub mod commands; // NEW: Add commands module
 pub mod compact;
 pub mod context;
 pub mod editor;
@@ -22,6 +23,7 @@ pub mod usage;
 use changelog::ChangelogArgs;
 use clap::Parser;
 use clear::ClearArgs;
+use commands::CommandsSubcommand; // NEW: Add commands import
 use compact::CompactArgs;
 use context::ContextSubcommand;
 use editor::EditorArgs;
@@ -72,6 +74,9 @@ pub enum SlashCommand {
     /// chat.enableKnowledge true"
     #[command(subcommand, hide = true)]
     Knowledge(KnowledgeSubcommand),
+    /// (Beta) Manage custom commands. Requires "q settings chat.enableCommands true"
+    #[command(subcommand, hide = true)]
+    Commands(CommandsSubcommand), // NEW: Add Commands subcommand
     /// Open $EDITOR (defaults to vi) to compose a prompt
     #[command(name = "editor")]
     PromptEditor(EditorArgs),
@@ -150,6 +155,7 @@ impl SlashCommand {
             },
             Self::Context(args) => args.execute(os, session).await,
             Self::Knowledge(subcommand) => subcommand.execute(os, session).await,
+            Self::Commands(subcommand) => subcommand.execute(os, session).await, // NEW: Add Commands execution
             Self::PromptEditor(args) => args.execute(session).await,
             Self::Reply(args) => args.execute(session).await,
             Self::Compact(args) => args.execute(os, session).await,
@@ -195,6 +201,7 @@ impl SlashCommand {
             Self::Profile => "profile",
             Self::Context(_) => "context",
             Self::Knowledge(_) => "knowledge",
+            Self::Commands(_) => "commands",
             Self::PromptEditor(_) => "editor",
             Self::Reply(_) => "reply",
             Self::Compact(_) => "compact",
