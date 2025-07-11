@@ -40,6 +40,7 @@ pub enum Setting {
     #[strum(message = "Type of knowledge index to use (string)")]
     KnowledgeIndexType,
     #[strum(message = "Key binding for fuzzy search command (single character)")]
+    EnabledCommands, // NEW: Add custom commands setting
     SkimCommandKey,
     #[strum(message = "Key binding for autocompletion hint acceptance (single character)")]
     AutocompletionKey,
@@ -95,6 +96,7 @@ impl AsRef<str> for Setting {
             Self::KnowledgeChunkSize => "knowledge.chunkSize",
             Self::KnowledgeChunkOverlap => "knowledge.chunkOverlap",
             Self::KnowledgeIndexType => "knowledge.indexType",
+            Self::EnabledCommands => "chat.enableCommands", // NEW: Add commands setting key
             Self::SkimCommandKey => "chat.skimCommandKey",
             Self::AutocompletionKey => "chat.autocompletionKey",
             Self::EnabledTangentMode => "chat.enableTangentMode",
@@ -141,6 +143,7 @@ impl TryFrom<&str> for Setting {
             "knowledge.chunkSize" => Ok(Self::KnowledgeChunkSize),
             "knowledge.chunkOverlap" => Ok(Self::KnowledgeChunkOverlap),
             "knowledge.indexType" => Ok(Self::KnowledgeIndexType),
+            "chat.enableCommands" => Ok(Self::EnabledCommands), // NEW: Add commands setting parsing
             "chat.skimCommandKey" => Ok(Self::SkimCommandKey),
             "chat.autocompletionKey" => Ok(Self::AutocompletionKey),
             "chat.enableTangentMode" => Ok(Self::EnabledTangentMode),

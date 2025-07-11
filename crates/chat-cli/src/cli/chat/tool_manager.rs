@@ -727,6 +727,10 @@ impl ToolManager {
             if !crate::cli::chat::tools::todo::TodoList::is_enabled(os) {
                 tool_specs.remove("todo_list");
             }
+            if !crate::cli::chat::tools::commands::Commands::is_enabled(os) {
+                // NEW: Add commands filtering
+                tool_specs.remove("commands");
+            }
 
             #[cfg(windows)]
             {
@@ -872,7 +876,10 @@ impl ToolManager {
             "thinking" => Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(map_err)?),
             "knowledge" => Tool::Knowledge(serde_json::from_value::<Knowledge>(value.args).map_err(map_err)?),
             "todo_list" => Tool::Todo(serde_json::from_value::<TodoList>(value.args).map_err(map_err)?),
-            // Note that this name is NO LONGER namespaced with server_name{DELIMITER}tool_name
+            "commands" => Tool::Commands(
+                serde_json::from_value::<crate::cli::chat::tools::commands::Commands>(value.args).map_err(map_err)?,
+            ), // NEW: Add commands parsing
+            // Note that this name is namespaced with server_name{DELIMITER}tool_name
             name => {
                 // Note: tn_map also has tools that underwent no transformation. In otherwords, if
                 // it is a valid tool name, we should get a hit.
