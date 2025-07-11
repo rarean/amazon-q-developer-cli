@@ -1,3 +1,4 @@
+pub mod commands; // NEW: Add commands module
 pub mod custom_tool;
 pub mod execute;
 pub mod fs_read;
@@ -14,6 +15,7 @@ use std::path::{
     PathBuf,
 };
 
+use commands::Commands; // NEW: Add commands import
 use crossterm::queue;
 use crossterm::style::{
     self,
@@ -42,7 +44,8 @@ use crate::cli::agent::{
 use crate::os::Os;
 
 pub const DEFAULT_APPROVE: [&str; 1] = ["fs_read"];
-pub const NATIVE_TOOLS: [&str; 7] = [
+pub const NATIVE_TOOLS: [&str; 8] = [
+    // NEW: Update array size from 7 to 8
     "fs_read",
     "fs_write",
     #[cfg(windows)]
@@ -52,6 +55,7 @@ pub const NATIVE_TOOLS: [&str; 7] = [
     "use_aws",
     "gh_issue",
     "knowledge",
+    "commands", // NEW: Add commands to tool names
     "thinking",
 ];
 
@@ -66,6 +70,7 @@ pub enum Tool {
     Custom(CustomTool),
     GhIssue(GhIssue),
     Knowledge(Knowledge),
+    Commands(Commands), // NEW: Add Commands variant
     Thinking(Thinking),
 }
 
@@ -83,6 +88,7 @@ impl Tool {
             Tool::Custom(custom_tool) => &custom_tool.name,
             Tool::GhIssue(_) => "gh_issue",
             Tool::Knowledge(_) => "knowledge",
+            Tool::Commands(_) => "commands", // NEW: Add commands name
             Tool::Thinking(_) => "thinking (prerelease)",
         }
         .to_owned()
@@ -99,6 +105,7 @@ impl Tool {
             Tool::GhIssue(_) => PermissionEvalResult::Allow,
             Tool::Thinking(_) => PermissionEvalResult::Allow,
             Tool::Knowledge(_) => PermissionEvalResult::Ask,
+            Tool::Commands(_) => PermissionEvalResult::Ask, // NEW: Same permission level as knowledge
         }
     }
 
@@ -112,6 +119,7 @@ impl Tool {
             Tool::Custom(custom_tool) => custom_tool.invoke(os, stdout).await,
             Tool::GhIssue(gh_issue) => gh_issue.invoke(os, stdout).await,
             Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout).await,
+            Tool::Commands(commands) => commands.invoke(os, stdout).await, // NEW: Add commands invoke
             Tool::Thinking(think) => think.invoke(stdout).await,
         }
     }
@@ -126,6 +134,8 @@ impl Tool {
             Tool::Custom(custom_tool) => custom_tool.queue_description(output),
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(output),
             Tool::Knowledge(knowledge) => knowledge.queue_description(os, output).await,
+            Tool::Commands(commands) => commands.queue_description(os, output).await, // NEW: Add commands
+            // queue_description
             Tool::Thinking(thinking) => thinking.queue_description(output),
         }
     }
@@ -140,6 +150,7 @@ impl Tool {
             Tool::Custom(custom_tool) => custom_tool.validate(os).await,
             Tool::GhIssue(gh_issue) => gh_issue.validate(os).await,
             Tool::Knowledge(knowledge) => knowledge.validate(os).await,
+            Tool::Commands(commands) => commands.validate(os).await, // NEW: Add commands validate
             Tool::Thinking(think) => think.validate(os).await,
         }
     }
