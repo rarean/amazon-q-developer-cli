@@ -1,8 +1,16 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{
+    Path,
+    PathBuf,
+};
 
 use crate::database::settings::Setting;
 use crate::os::Os;
+use crate::util::bash_preprocessor::BashPreprocessor;
+use crate::util::command_import_export::{
+    CommandImportExport,
+    ExportFormat,
+};
 use crate::util::command_types::{
     CommandError,
     CustomCommand,
@@ -16,6 +24,8 @@ pub struct CommandManager {
     user_commands_dir: PathBuf,
     /// Cache of loaded commands
     cache: HashMap<String, CustomCommand>,
+    /// Bash command preprocessor
+    bash_preprocessor: BashPreprocessor,
 }
 
 impl CommandManager {
@@ -39,6 +49,7 @@ impl CommandManager {
             project_commands_dir,
             user_commands_dir,
             cache: HashMap::new(),
+            bash_preprocessor: BashPreprocessor::default(),
         })
     }
 
@@ -116,6 +127,7 @@ impl CommandManager {
     ) -> Result<String, CommandError> {
         let command = self.get_command(name)?;
         let mut content = command.content.clone();
+        let frontmatter = command.frontmatter.clone();
 
         // Process argument substitution
         if let Some(args) = args {
@@ -126,6 +138,11 @@ impl CommandManager {
 
         // Process file references
         content = Self::process_file_references(content, os)?;
+
+        // Process bash commands (NEW)
+        content = self
+            .bash_preprocessor
+            .process_bash_commands(&content, Some(&frontmatter))?;
 
         // Basic security validation
         Self::validate_command_security(&content)?;
@@ -142,6 +159,7 @@ impl CommandManager {
     ) -> Result<String, CommandError> {
         let command = self.get_user_command(name)?;
         let mut content = command.content.clone();
+        let frontmatter = command.frontmatter.clone();
 
         // Process argument substitution
         if let Some(args) = args {
@@ -152,6 +170,11 @@ impl CommandManager {
 
         // Process file references
         content = Self::process_file_references(content, os)?;
+
+        // Process bash commands (NEW)
+        content = self
+            .bash_preprocessor
+            .process_bash_commands(&content, Some(&frontmatter))?;
 
         // Basic security validation
         Self::validate_command_security(&content)?;
@@ -182,14 +205,7 @@ impl CommandManager {
             return Err(CommandError::NotFound(name.to_string()));
         }
 
-        let content = std::fs::read_to_string(&file_path)?;
-
-        Ok(CustomCommand {
-            name: name.to_string(),
-            content,
-            file_path,
-            created_at: chrono::Utc::now(),
-        })
+        CustomCommand::from_file(file_path)
     }
 
     /// Process file references in command content
@@ -322,6 +338,133 @@ impl CommandManager {
 
         Ok(())
     }
+
+    /// Export a command to a file
+    #[allow(dead_code)]
+    pub fn export_command(
+        &mut self,
+        name: &str,
+        output_path: &Path,
+        format: ExportFormat,
+    ) -> Result<String, CommandError> {
+        let command = self.get_command(name)?;
+        CommandImportExport::export_command(command, output_path, format)?;
+
+        Ok(format!(
+            "✅ Command '{}' exported to {} (format: {:?})",
+            name,
+            output_path.display(),
+            format
+        ))
+    }
+
+    /// Export all project commands to a directory
+    #[allow(dead_code)]
+    pub fn export_all_commands(&mut self, output_dir: &Path, format: ExportFormat) -> Result<String, CommandError> {
+        let command_names = self.list_commands()?;
+        let mut commands = HashMap::new();
+
+        for name in &command_names {
+            let command = self.get_command(name)?;
+            commands.insert(name.clone(), command.clone());
+        }
+
+        CommandImportExport::export_commands(&commands, output_dir, format)?;
+
+        Ok(format!(
+            "✅ Exported {} commands to {} (format: {:?})",
+            commands.len(),
+            output_dir.display(),
+            format
+        ))
+    }
+
+    /// Import a command from a file
+    #[allow(dead_code)]
+    pub fn import_command(&mut self, file_path: &Path, force: bool) -> Result<String, CommandError> {
+        let (name, command) = CommandImportExport::import_command(file_path)?;
+
+        // Validate the imported command
+        CommandImportExport::validate_command(&command)?;
+
+        // Check if command already exists
+        let command_file = self.project_commands_dir.join(format!("{}.md", name));
+        if command_file.exists() && !force {
+            return Err(CommandError::AlreadyExists(format!(
+                "Command '{}' already exists. Use --force to overwrite.",
+                name
+            )));
+        }
+
+        // Ensure commands directory exists
+        std::fs::create_dir_all(&self.project_commands_dir)?;
+
+        // Write the command as markdown (native format)
+        CommandImportExport::export_command(&command, &command_file, ExportFormat::Markdown)?;
+
+        // Update cache
+        self.cache.insert(name.clone(), command);
+
+        Ok(format!(
+            "✅ Command '{}' imported successfully!\n   Use '/project:{}' to execute it.",
+            name, name
+        ))
+    }
+
+    /// Import multiple commands from a directory
+    #[allow(dead_code)]
+    pub fn import_commands(&mut self, import_dir: &Path, force: bool) -> Result<String, CommandError> {
+        let commands = CommandImportExport::import_commands(import_dir)?;
+
+        if commands.is_empty() {
+            return Ok("No valid commands found to import.".to_string());
+        }
+
+        let mut imported_count = 0;
+        let mut skipped_count = 0;
+        let mut errors = Vec::new();
+
+        // Ensure commands directory exists
+        std::fs::create_dir_all(&self.project_commands_dir)?;
+
+        for (name, command) in commands {
+            // Validate the command
+            if let Err(e) = CommandImportExport::validate_command(&command) {
+                errors.push(format!("Command '{}': {}", name, e));
+                continue;
+            }
+
+            // Check if command already exists
+            let command_file = self.project_commands_dir.join(format!("{}.md", name));
+            if command_file.exists() && !force {
+                skipped_count += 1;
+                continue;
+            }
+
+            // Import the command
+            match CommandImportExport::export_command(&command, &command_file, ExportFormat::Markdown) {
+                Ok(_) => {
+                    self.cache.insert(name, command);
+                    imported_count += 1;
+                },
+                Err(e) => {
+                    errors.push(format!("Failed to import '{}': {}", name, e));
+                },
+            }
+        }
+
+        let mut result = format!("✅ Import completed: {} commands imported", imported_count);
+
+        if skipped_count > 0 {
+            result.push_str(&format!(", {} skipped (already exist)", skipped_count));
+        }
+
+        if !errors.is_empty() {
+            result.push_str(&format!("\n⚠️  Errors:\n{}", errors.join("\n")));
+        }
+
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
@@ -340,9 +483,9 @@ mod tests {
     #[test]
     fn test_argument_substitution() {
         let content = "Help with: $ARGUMENTS and more $ARGUMENTS";
-        let args = Some("git commits");
+        let args = "git commits";
 
-        let processed = content.replace("$ARGUMENTS", args.unwrap_or(""));
+        let processed = content.replace("$ARGUMENTS", args);
         assert_eq!(processed, "Help with: git commits and more git commits");
 
         // Test with no arguments
@@ -356,6 +499,7 @@ mod tests {
             project_commands_dir: PathBuf::new(),
             user_commands_dir: PathBuf::new(),
             cache: HashMap::new(),
+            bash_preprocessor: BashPreprocessor::default(),
         };
 
         // Test dangerous patterns
