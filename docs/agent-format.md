@@ -26,8 +26,6 @@ The `name` field specifies the name of the agent. This is used for identificatio
 }
 ```
 
-Note: While this field can be included in the configuration file, it will be overridden by the filename when the agent is loaded.
-
 ## Description Field
 
 The `description` field provides a description of what the agent does. This is primarily for human readability and helps users distinguish between different agents.
@@ -227,7 +225,7 @@ Available hook triggers:
 
 ## UseLegacyMcpJson Field
 
-The `useLegacyMcpJson` field determines whether to include MCP servers defined in the legacy global MCP configuration file (`~/.aws/amazonq/mcp.json`).
+The `useLegacyMcpJson` field determines whether to include MCP servers defined in the legacy MCP configuration files (`~/.aws/amazonq/mcp.json` for global and `cwd/.amazonq/mcp.json` for workspace).
 
 ```json
 {
@@ -286,12 +284,12 @@ Here's a complete example of an agent configuration file:
   "hooks": {
     "agentSpawn": [
       {
-        "command": "git status",
+        "command": "git status"
       }
     ],
     "userPromptSubmit": [
       {
-        "command": "ls -la",
+        "command": "ls -la"
       }
     ]
   },

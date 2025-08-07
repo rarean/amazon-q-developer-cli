@@ -108,7 +108,7 @@ impl Tool {
             Tool::Custom(custom_tool) => custom_tool.eval_perm(agent),
             Tool::GhIssue(_) => PermissionEvalResult::Allow,
             Tool::Thinking(_) => PermissionEvalResult::Allow,
-            Tool::Knowledge(_) => PermissionEvalResult::Ask,
+            Tool::Knowledge(knowledge) => knowledge.eval_perm(agent),
             Tool::Commands(_) => PermissionEvalResult::Ask, // NEW: Same permission level as knowledge
         }
     }
@@ -158,6 +158,15 @@ impl Tool {
             Tool::Thinking(think) => think.validate(os).await,
         }
     }
+
+    /// Returns additional information about the tool if available
+    pub fn get_additional_info(&self) -> Option<serde_json::Value> {
+        match self {
+            Tool::UseAws(use_aws) => Some(use_aws.get_additional_info()),
+            // Add other tool types here as they implement get_additional_info()
+            _ => None,
+        }
+    }
 }
 
 /// A tool specification to be sent to the model as part of a conversation. Maps to
@@ -180,8 +189,9 @@ pub enum ToolOrigin {
 
 impl std::hash::Hash for ToolOrigin {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
         match self {
-            Self::Native => "native".hash(state),
+            Self::Native => {},
             Self::McpServer(name) => name.hash(state),
         }
     }

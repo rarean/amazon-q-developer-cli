@@ -42,7 +42,10 @@ use clap::{
     Parser,
 };
 use cli::compact::CompactStrategy;
-use cli::model::select_model;
+use cli::model::{
+    get_model_options,
+    select_model,
+};
 pub use conversation::ConversationState;
 use conversation::TokenWarningLevel;
 use crossterm::style::{
@@ -98,6 +101,7 @@ use tool_manager::{
 };
 use tools::gh_issue::GhIssueContext;
 use tools::{
+    NATIVE_TOOLS,
     OutputKind,
     QueuedTool,
     Tool,
@@ -129,14 +133,12 @@ use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::agent::Agents;
 use crate::cli::chat::cli::SlashCommand;
-use crate::cli::chat::cli::model::{
-    MODEL_OPTIONS,
-    default_model_id,
-};
+use crate::cli::chat::cli::model::default_model_id;
 use crate::cli::chat::cli::prompts::{
     GetPromptError,
     PromptsSubcommand,
 };
+use crate::cli::chat::util::sanitize_unicode_tags;
 use crate::database::settings::Setting;
 use crate::mcp_client::Prompt;
 use crate::os::Os;
@@ -161,7 +163,7 @@ const LIMIT_REACHED_TEXT: &str = color_print::cstr! { "You've used all your free
 
 pub const EXTRA_HELP: &str = color_print::cstr! {"
 <cyan,em>MCP:</cyan,em>
-<black!>You can now configure the Amazon Q CLI to use MCP servers. \nLearn how: https://docs.aws.amazon.com/en_us/amazonq/latest/qdeveloper-ug/command-line-mcp.html</black!>
+<black!>You can now configure the Amazon Q CLI to use MCP servers. \nLearn how: https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/qdev-mcp.html</black!>
 
 <cyan,em>Tips:</cyan,em>
 <em>!{command}</em>          <black!>Quickly execute a command in your current session</black!>
@@ -280,6 +282,28 @@ impl ChatArgs {
             }
 
             if let Some(trust_tools) = self.trust_tools.take() {
+                for tool in &trust_tools {
+                    if !tool.starts_with("@") && !NATIVE_TOOLS.contains(&tool.as_str()) {
+                        let _ = queue!(
+                            stderr,
+                            style::SetForegroundColor(Color::Yellow),
+                            style::Print("WARNING: "),
+                            style::SetForegroundColor(Color::Reset),
+                            style::Print("--trust-tools arg for custom tool "),
+                            style::SetForegroundColor(Color::Cyan),
+                            style::Print(tool),
+                            style::SetForegroundColor(Color::Reset),
+                            style::Print(" needs to be prepended with "),
+                            style::SetForegroundColor(Color::Green),
+                            style::Print("@{MCPSERVERNAME}/"),
+                            style::SetForegroundColor(Color::Reset),
+                            style::Print("\n"),
+                        );
+                    }
+                }
+
+                let _ = stderr.flush();
+
                 if let Some(a) = agents.get_active_mut() {
                     a.allowed_tools.extend(trust_tools);
                 }
@@ -289,12 +313,13 @@ impl ChatArgs {
         };
 
         // If modelId is specified, verify it exists before starting the chat
+        let model_options = get_model_options(os).await?;
         let model_id: Option<String> = if let Some(model_name) = self.model {
             let model_name_lower = model_name.to_lowercase();
-            match MODEL_OPTIONS.iter().find(|opt| opt.name == model_name_lower) {
+            match model_options.iter().find(|opt| opt.name == model_name_lower) {
                 Some(opt) => Some((opt.model_id).to_string()),
                 None => {
-                    let available_names: Vec<&str> = MODEL_OPTIONS.iter().map(|opt| opt.name).collect();
+                    let available_names: Vec<&str> = model_options.iter().map(|opt| opt.name).collect();
                     bail!(
                         "Model '{}' does not exist. Available models: {}",
                         model_name,
@@ -553,6 +578,7 @@ impl ChatSession {
         tool_config: HashMap<String, ToolSpec>,
         interactive: bool,
     ) -> Result<Self> {
+        let model_options = get_model_options(os).await?;
         let valid_model_id = match model_id {
             Some(id) => id,
             None => {
@@ -561,7 +587,7 @@ impl ChatSession {
                     .settings
                     .get_string(Setting::ChatDefaultModel)
                     .and_then(|model_name| {
-                        MODEL_OPTIONS
+                        model_options
                             .iter()
                             .find(|opt| opt.name == model_name)
                             .map(|opt| opt.model_id.to_owned())
@@ -1170,7 +1196,8 @@ impl ChatSession {
         self.stderr.flush()?;
 
         if let Some(ref id) = self.conversation.model {
-            if let Some(model_option) = MODEL_OPTIONS.iter().find(|option| option.model_id == *id) {
+            let model_options = get_model_options(os).await?;
+            if let Some(model_option) = model_options.iter().find(|option| option.model_id == *id) {
                 execute!(
                     self.stderr,
                     style::SetForegroundColor(Color::Cyan),
@@ -1562,7 +1589,7 @@ impl ChatSession {
 
     async fn handle_input(&mut self, os: &mut Os, mut user_input: String) -> Result<ChatState, ChatError> {
         queue!(self.stderr, style::Print('\n'))?;
-
+        user_input = sanitize_unicode_tags(&user_input);
         let input = user_input.trim();
 
         // handle image path
@@ -2022,6 +2049,18 @@ impl ChatSession {
             tool_telemetry = tool_telemetry.and_modify(|ev| {
                 ev.is_accepted = true;
             });
+
+            // Extract AWS service name and operation name if available
+            if let Some(additional_info) = tool.tool.get_additional_info() {
+                if let Some(aws_service_name) = additional_info.get("aws_service_name").and_then(|v| v.as_str()) {
+                    tool_telemetry =
+                        tool_telemetry.and_modify(|ev| ev.aws_service_name = Some(aws_service_name.to_string()));
+                }
+                if let Some(aws_operation_name) = additional_info.get("aws_operation_name").and_then(|v| v.as_str()) {
+                    tool_telemetry =
+                        tool_telemetry.and_modify(|ev| ev.aws_operation_name = Some(aws_operation_name.to_string()));
+                }
+            }
 
             let invoke_result = tool.tool.invoke(os, &mut self.stdout).await;
 
@@ -2558,7 +2597,7 @@ impl ChatSession {
     }
 
     async fn retry_model_overload(&mut self, os: &mut Os) -> Result<ChatState, ChatError> {
-        match select_model(self) {
+        match select_model(os, self).await {
             Ok(Some(_)) => (),
             Ok(None) => {
                 // User did not select a model, so reset the current request state.
@@ -2695,7 +2734,7 @@ impl ChatSession {
             }
             .map(|v| v.to_string());
 
-            os.telemetry.send_tool_use_suggested(event).ok();
+            os.telemetry.send_tool_use_suggested(&os.database, event).await.ok();
         }
     }
 
