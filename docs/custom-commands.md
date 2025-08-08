@@ -79,6 +79,65 @@ Create a new project command with the specified name. This will:
 - Cannot use reserved names: `help`, `add`, `remove`, `show`, `list`
 - Use hyphens or underscores for multi-word names
 
+### `/commands show [--scope project|global]`
+
+Display all available commands with detailed information including creation dates, file paths, and content previews.
+
+```bash
+/commands show                    # Show all commands
+/commands show --scope project    # Show only project commands
+/commands show --scope global     # Show only user/global commands
+```
+
+The output includes:
+- Command name and scope (project/global)
+- File path and last modified date
+- Content preview (first few lines)
+- Usage examples with proper syntax
+
+### `/commands remove <name> [--scope project|global]`
+
+Remove commands from your command library. Includes safety confirmation prompts.
+
+```bash
+/commands remove git-helper                # Remove from project scope
+/commands remove code-review --scope global # Remove from user scope
+```
+
+**Safety Features:**
+- Confirmation prompt before deletion
+- Clear indication of which file will be deleted
+- Scope specification to avoid accidental deletions
+
+### `/commands update <name> [--scope project|global]`
+
+Edit existing commands using your default editor. The command will be reloaded automatically after editing.
+
+```bash
+/commands update git-helper                # Update project command
+/commands update code-review --scope global # Update user command
+```
+
+**Features:**
+- Opens existing command in your preferred editor
+- Automatic cache refresh after editing
+- Scope resolution (project commands take precedence)
+
+### `/commands clear [--scope project|global]`
+
+Remove multiple commands at once with batch processing capabilities.
+
+```bash
+/commands clear                    # Clear all commands (with confirmation)
+/commands clear --scope project    # Clear only project commands
+/commands clear --scope global     # Clear only user commands
+```
+
+**Safety Features:**
+- Interactive confirmation with detailed impact summary
+- Batch processing with progress indication
+- Scope-specific clearing to prevent accidental data loss
+
 ## Command Execution
 
 ### Basic Execution
@@ -86,13 +145,19 @@ Create a new project command with the specified name. This will:
 Execute commands using their respective prefixes:
 
 ```bash
-/project:command-name
-/user:command-name
+/project:command-name              # Execute project command
+/user:command-name                 # Execute user/global command
 ```
+
+**Execution Flow:**
+1. Command is located in the appropriate scope (project takes precedence)
+2. Command content is loaded and processed
+3. Arguments and file references are substituted
+4. Final content is sent to Amazon Q for processing
 
 ### Arguments Support
 
-Commands can accept arguments using the `$ARGUMENTS` placeholder:
+Commands can accept arguments that are dynamically substituted at execution time using the `$ARGUMENTS` placeholder.
 
 **Command Definition** (in `optimize.md`):
 ```markdown
@@ -104,6 +169,48 @@ Please focus on:
 1. Algorithm efficiency
 2. Memory usage
 3. Database query optimization
+```
+
+**Execution Examples:**
+```bash
+/project:optimize "the user authentication module"
+/project:optimize src/database.rs
+/project:optimize "functions in utils.py that handle file I/O"
+```
+
+**Argument Processing:**
+- Arguments are passed as a single string after the command name
+- Use quotes for multi-word arguments: `/project:review "authentication logic"`
+- Arguments can reference files, functions, or any descriptive text
+- The `$ARGUMENTS` placeholder is replaced with the exact text provided
+
+### Advanced Argument Usage
+
+**Multiple Argument References:**
+```markdown
+# Code Review Template
+
+Please review $ARGUMENTS for the following aspects:
+
+1. **Security**: Look for vulnerabilities in $ARGUMENTS
+2. **Performance**: Analyze efficiency of $ARGUMENTS
+3. **Best Practices**: Check if $ARGUMENTS follows coding standards
+```
+
+**Conditional Arguments:**
+```markdown
+# Testing Command
+
+Run comprehensive tests for: $ARGUMENTS
+
+If no specific component is mentioned, run the full test suite.
+```
+
+**Usage:**
+```bash
+/project:test "authentication module"     # Tests specific module
+/project:test                            # Runs full test suite
+```
 ```
 
 **Usage**:
@@ -131,24 +238,55 @@ When executed, `@src/main.rs` and `@docs/architecture.md` will be replaced with 
 
 ### Namespaced Commands
 
-Organize commands in subdirectories for better organization:
+Organize commands in subdirectories for better organization and team collaboration:
 
 **Structure**:
 ```
 .amazonq/commands/
 ├── frontend/
 │   ├── component.md
-│   └── styling.md
-└── backend/
-    ├── api.md
-    └── database.md
+│   ├── styling.md
+│   └── testing.md
+├── backend/
+│   ├── api.md
+│   ├── database.md
+│   └── security.md
+└── devops/
+    ├── deployment.md
+    └── monitoring.md
 ```
 
-**Usage**:
+**Execution Examples**:
 ```bash
-/project:frontend:component
-/project:backend:api
+# Frontend commands
+/project:frontend:component "Button with loading state"
+/project:frontend:styling "responsive navigation bar"
+/project:frontend:testing "user authentication flow"
+
+# Backend commands  
+/project:backend:api "user registration endpoint"
+/project:backend:database "optimize user queries"
+/project:backend:security "JWT token validation"
+
+# DevOps commands
+/project:devops:deployment "staging environment setup"
+/project:devops:monitoring "API response time alerts"
 ```
+
+**User Command Namespacing**:
+```bash
+# Personal workflow commands
+/user:review:security "authentication implementation"
+/user:review:performance "database query optimization"
+/user:tools:format "TypeScript configuration files"
+/user:tools:lint "React component structure"
+```
+
+**Benefits of Namespacing**:
+- **Organization**: Group related commands logically
+- **Team Collaboration**: Clear ownership and responsibility
+- **Discoverability**: Easier to find relevant commands
+- **Scalability**: Manage large command libraries effectively
 
 ## Command Template Structure
 
@@ -174,6 +312,83 @@ Any additional context or requirements for this command.
 ## Examples
 
 Provide examples of how this command should be used or what output is expected.
+```
+
+## Execution Patterns
+
+### Command Resolution Order
+
+When executing commands, the system follows this resolution order:
+
+1. **Project Commands**: Commands in `.amazonq/commands/` (current repository)
+2. **User Commands**: Commands in `~/.amazonq/commands/` (global user commands)
+
+**Example**:
+```bash
+# If both project and user commands exist with same name:
+/project:deploy     # Explicitly uses project version
+/user:deploy        # Explicitly uses user version
+```
+
+### Common Execution Patterns
+
+**Code Review Workflow**:
+```bash
+/project:review "authentication module"
+/project:review @src/auth.rs
+/project:review "changes in PR #123"
+```
+
+**Testing and Quality Assurance**:
+```bash
+/project:test "user registration flow"
+/project:lint "TypeScript configuration"
+/project:security-scan "API endpoints"
+```
+
+**Documentation and Analysis**:
+```bash
+/project:document "database schema changes"
+/project:analyze "performance bottlenecks in @src/database.rs"
+/project:explain "OAuth implementation approach"
+```
+
+**Development Workflows**:
+```bash
+/user:setup:environment "React TypeScript project"
+/user:debug:performance "slow API responses"
+/user:refactor:patterns "extract common utilities"
+```
+
+### Error Handling
+
+**Command Not Found**:
+```bash
+/project:nonexistent
+# Output: ❌ Command 'nonexistent' not found in project scope.
+#         Use '/commands add nonexistent' to create it.
+```
+
+**Security Violations**:
+```bash
+# If command contains dangerous patterns
+# Output: 🔒 Security violation: Command contains potentially dangerous pattern: rm -rf
+```
+
+**Feature Disabled**:
+```bash
+# If custom commands are disabled
+# Output: ❌ Commands tool is disabled. Enable it with: q settings chat.enableCommands true
+```
+
+### Execution Indicators
+
+When executing commands, you'll see clear indicators:
+
+```bash
+/project:code-review "authentication logic"
+# Output: 🚀 Executing command: project:code-review
+#         [Command content is processed and sent to Amazon Q]
 ```
 
 ## Advanced Features
@@ -288,9 +503,10 @@ Fix any errors found and ensure all checks pass.
 
 ### Feature Limitations
 
-- No command deletion through CLI (manual file deletion required)
-- No command listing or search functionality
-- No command versioning or history
+- Command cache is session-specific (file changes require session restart)
+- No command versioning or history tracking
+- File references are read-only (cannot modify files through commands)
+- No automatic command synchronization across team members
 
 ## Troubleshooting
 
@@ -337,3 +553,32 @@ If `@filename` references aren't working:
 2. **Use relative paths**: Paths are relative to current working directory
 3. **Verify permissions**: Ensure files are readable
 4. **Test manually**: Try reading the file directly to confirm access
+
+## Quick Reference
+
+### Management Commands
+```bash
+/commands add <name>                    # Create new command
+/commands show [--scope project|global] # List commands
+/commands remove <name> [--scope]       # Delete command
+/commands update <name> [--scope]       # Edit command
+/commands clear [--scope]               # Delete multiple commands
+```
+
+### Execution Commands
+```bash
+/project:<name> [arguments]             # Execute project command
+/user:<name> [arguments]                # Execute user command
+/user:<namespace>:<name> [arguments]    # Execute namespaced user command
+```
+
+### Command Features
+- **Arguments**: Use `$ARGUMENTS` placeholder in command content
+- **File References**: Use `@filename` to include file contents
+- **Namespacing**: Organize commands in subdirectories
+- **Scoping**: Project commands override user commands
+- **Security**: Automatic validation of dangerous patterns
+
+### File Locations
+- **Project Commands**: `.amazonq/commands/` (version controlled)
+- **User Commands**: `~/.amazonq/commands/` (personal, global)

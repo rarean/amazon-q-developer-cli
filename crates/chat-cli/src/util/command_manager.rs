@@ -13,6 +13,7 @@ use crate::util::command_import_export::{
 };
 use crate::util::command_types::{
     CommandError,
+    CommandScope,
     CustomCommand,
 };
 
@@ -232,7 +233,7 @@ impl CommandManager {
     }
 
     /// Basic security validation for command content
-    fn validate_command_security(content: &str) -> Result<(), CommandError> {
+    pub fn validate_command_security(content: &str) -> Result<(), CommandError> {
         // List of potentially dangerous patterns
         let dangerous_patterns = [
             "rm -rf",
@@ -255,6 +256,50 @@ impl CommandManager {
         }
 
         Ok(())
+    }
+
+    /// List all available commands with full details
+    pub fn list_commands_detailed(&mut self, scope: Option<&CommandScope>) -> Result<Vec<CustomCommand>, CommandError> {
+        let mut commands = Vec::new();
+
+        // Load project commands if requested or no scope specified
+        if (scope.is_none() || scope == Some(&CommandScope::Project)) && self.project_commands_dir.exists() {
+            for entry in std::fs::read_dir(&self.project_commands_dir)? {
+                let entry = entry?;
+                let path = entry.path();
+
+                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+                    if let Ok(mut command) = CustomCommand::from_file(path) {
+                        command.scope = CommandScope::Project;
+                        commands.push(command);
+                    }
+                }
+            }
+        }
+
+        // Load user/global commands if requested or no scope specified
+        if (scope.is_none() || scope == Some(&CommandScope::Global)) && self.user_commands_dir.exists() {
+            for entry in std::fs::read_dir(&self.user_commands_dir)? {
+                let entry = entry?;
+                let path = entry.path();
+
+                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+                    if let Ok(mut command) = CustomCommand::from_file(path) {
+                        command.scope = CommandScope::Global;
+                        commands.push(command);
+                    }
+                }
+            }
+        }
+
+        commands.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(commands)
+    }
+
+    /// Clear the command cache
+    #[allow(dead_code)]
+    pub fn clear_cache(&mut self) {
+        self.cache.clear();
     }
 
     /// List all available commands
@@ -301,7 +346,7 @@ impl CommandManager {
     }
 
     /// Open editor for command file
-    fn open_editor(file_path: &PathBuf) -> Result<(), CommandError> {
+    pub fn open_editor(file_path: &PathBuf) -> Result<(), CommandError> {
         // Get editor from environment, fallback to sensible defaults
         let editor = std::env::var("EDITOR")
             .or_else(|_| std::env::var("VISUAL"))

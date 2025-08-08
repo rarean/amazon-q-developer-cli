@@ -4,6 +4,7 @@ use chrono::{
     DateTime,
     Utc,
 };
+use clap::ValueEnum;
 use serde::{
     Deserialize,
     Serialize,
@@ -15,7 +16,7 @@ use crate::util::command_frontmatter::{
 };
 
 /// Scope of a command (project-specific or global)
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
 pub enum CommandScope {
     /// Command is specific to the current project
     Project,
@@ -37,6 +38,8 @@ pub struct CustomCommand {
     pub created_at: DateTime<Utc>,
     /// YAML frontmatter configuration
     pub frontmatter: CommandFrontmatter,
+    /// Scope of the command (project or global)
+    pub scope: CommandScope,
 }
 
 #[allow(dead_code)]
@@ -65,6 +68,7 @@ impl CustomCommand {
             file_path,
             created_at: Utc::now(),
             frontmatter,
+            scope: CommandScope::Project, // Default scope, will be updated by CommandManager
         })
     }
 
@@ -76,6 +80,7 @@ impl CustomCommand {
             file_path,
             created_at: Utc::now(),
             frontmatter: CommandFrontmatter::default(),
+            scope: CommandScope::Project, // Default scope
         }
     }
 
