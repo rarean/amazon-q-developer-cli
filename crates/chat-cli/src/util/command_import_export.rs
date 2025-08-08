@@ -195,6 +195,7 @@ impl CommandImportExport {
             file_path: std::path::PathBuf::new(), // Will be set by import logic
             created_at: chrono::Utc::now(),
             frontmatter,
+            scope: crate::util::command_types::CommandScope::Project, // Default scope
         })
     }
 
@@ -287,6 +288,7 @@ impl CommandExportData {
             file_path: std::path::PathBuf::new(), // Will be set by import logic
             created_at: chrono::Utc::now(),
             frontmatter,
+            scope: crate::util::command_types::CommandScope::Project, // Default scope
         }
     }
 }
@@ -299,9 +301,11 @@ mod tests {
     use crate::util::command_frontmatter::CommandFrontmatter;
 
     fn create_test_command() -> CustomCommand {
-        let mut frontmatter = CommandFrontmatter::default();
-        frontmatter.description = Some("A test command".to_string());
-        frontmatter.allowed_tools = vec!["execute_bash".to_string(), "fs_read".to_string()];
+        let frontmatter = CommandFrontmatter {
+            description: Some("A test command".to_string()),
+            allowed_tools: vec!["execute_bash".to_string(), "fs_read".to_string()],
+            ..Default::default()
+        };
 
         CustomCommand {
             name: "test".to_string(),
@@ -309,6 +313,7 @@ mod tests {
             file_path: std::path::PathBuf::from("test.md"),
             created_at: chrono::Utc::now(),
             frontmatter,
+            scope: crate::util::command_types::CommandScope::Project,
         }
     }
 
@@ -425,12 +430,15 @@ mod tests {
             file_path: std::path::PathBuf::from("empty.md"),
             created_at: chrono::Utc::now(),
             frontmatter: CommandFrontmatter::default(),
+            scope: crate::util::command_types::CommandScope::Project,
         };
         assert!(CommandImportExport::validate_command(&empty_command).is_err());
 
-        let mut invalid_frontmatter = CommandFrontmatter::default();
-        invalid_frontmatter.description = Some("Test".to_string());
-        invalid_frontmatter.allowed_tools = vec!["".to_string()]; // Empty tool name
+        let invalid_frontmatter = CommandFrontmatter {
+            description: Some("Test".to_string()),
+            allowed_tools: vec!["".to_string()], // Empty tool name
+            ..Default::default()
+        };
 
         let invalid_frontmatter_command = CustomCommand {
             name: "invalid".to_string(),
@@ -438,6 +446,7 @@ mod tests {
             file_path: std::path::PathBuf::from("invalid.md"),
             created_at: chrono::Utc::now(),
             frontmatter: invalid_frontmatter,
+            scope: crate::util::command_types::CommandScope::Project,
         };
         assert!(CommandImportExport::validate_command(&invalid_frontmatter_command).is_err());
     }
