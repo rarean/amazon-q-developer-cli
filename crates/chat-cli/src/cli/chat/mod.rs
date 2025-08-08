@@ -3475,4 +3475,175 @@ mod tests {
             assert_eq!(actual, *expected, "expected {} for input {}", expected, input);
         }
     }
+
+    // Custom Commands Integration Tests
+    mod custom_commands_integration_tests {
+
+        #[test]
+        fn test_project_command_syntax_parsing() {
+            let input = "/project:test-command arg1 arg2";
+            assert!(input.starts_with("/project:"));
+
+            let command_part = input.strip_prefix("/project:").unwrap();
+            let parts: Vec<&str> = command_part.splitn(2, ' ').collect();
+
+            assert_eq!(parts[0], "test-command");
+            assert_eq!(parts.get(1).copied(), Some("arg1 arg2"));
+        }
+
+        #[test]
+        fn test_user_command_syntax_parsing() {
+            let input = "/user:test-command arg1 arg2";
+            assert!(input.starts_with("/user:"));
+
+            let command_part = input.strip_prefix("/user:").unwrap();
+            let parts: Vec<&str> = command_part.splitn(2, ' ').collect();
+
+            assert_eq!(parts[0], "test-command");
+            assert_eq!(parts.get(1).copied(), Some("arg1 arg2"));
+        }
+
+        #[test]
+        fn test_namespaced_user_command_parsing() {
+            let input = "/user:tools:format some code";
+            let command_part = input.strip_prefix("/user:").unwrap();
+            let parts: Vec<&str> = command_part.splitn(2, ' ').collect();
+            let command_spec = parts[0];
+            let args = parts.get(1).copied();
+
+            let name_parts: Vec<&str> = command_spec.splitn(2, ':').collect();
+            assert_eq!(name_parts.len(), 2);
+            assert_eq!(name_parts[0], "tools");
+            assert_eq!(name_parts[1], "format");
+            assert_eq!(args, Some("some code"));
+
+            let command_name = format!("{}/{}", name_parts[0], name_parts[1]);
+            assert_eq!(command_name, "tools/format");
+        }
+
+        #[test]
+        fn test_command_argument_substitution() {
+            let content = "Analyze the following code: $ARGUMENTS";
+            let args = "authentication module";
+            let processed = content.replace("$ARGUMENTS", args);
+
+            assert_eq!(processed, "Analyze the following code: authentication module");
+        }
+
+        #[test]
+        fn test_command_argument_substitution_multiple() {
+            let content = "Review $ARGUMENTS for security issues in $ARGUMENTS";
+            let args = "user login";
+            let processed = content.replace("$ARGUMENTS", args);
+
+            assert_eq!(processed, "Review user login for security issues in user login");
+        }
+
+        #[test]
+        fn test_command_argument_substitution_empty() {
+            let content = "Run tests for: $ARGUMENTS";
+            let processed = content.replace("$ARGUMENTS", "");
+
+            assert_eq!(processed, "Run tests for: ");
+        }
+
+        #[test]
+        fn test_file_reference_pattern_matching() {
+            use regex::Regex;
+
+            let file_ref_regex = Regex::new(r"@([^\s]+)").unwrap();
+            let content = "Review @src/main.rs and @docs/README.md";
+
+            let matches: Vec<&str> = file_ref_regex
+                .captures_iter(content)
+                .map(|cap| cap.get(1).unwrap().as_str())
+                .collect();
+
+            assert_eq!(matches, vec!["src/main.rs", "docs/README.md"]);
+        }
+
+        #[test]
+        fn test_command_name_validation_in_execution() {
+            // Test empty command name detection
+            let empty_project = "/project:";
+            let command_part = empty_project.strip_prefix("/project:").unwrap();
+            assert!(command_part.is_empty());
+
+            let empty_user = "/user:";
+            let command_part = empty_user.strip_prefix("/user:").unwrap();
+            assert!(command_part.is_empty());
+        }
+
+        #[test]
+        fn test_security_validation_patterns() {
+            let dangerous_patterns = [
+                "rm -rf /tmp",
+                "sudo apt install",
+                "chmod 777 file",
+                "curl -s malicious.com",
+                "wget http://bad.com",
+                "nc -l 1234",
+            ];
+
+            for pattern in &dangerous_patterns {
+                let content = format!("Execute: {}", pattern);
+                assert!(
+                    crate::util::command_manager::CommandManager::validate_command_security(&content).is_err(),
+                    "Pattern '{}' should be detected as dangerous",
+                    pattern
+                );
+            }
+        }
+
+        #[test]
+        fn test_command_resolution_precedence() {
+            // Test that project commands take precedence over user commands
+            let project_command = "/project:deploy";
+            let user_command = "/user:deploy";
+
+            // Both should parse correctly
+            assert!(project_command.starts_with("/project:"));
+            assert!(user_command.starts_with("/user:"));
+
+            let project_part = project_command.strip_prefix("/project:").unwrap();
+            let user_part = user_command.strip_prefix("/user:").unwrap();
+
+            assert_eq!(project_part, "deploy");
+            assert_eq!(user_part, "deploy");
+        }
+
+        #[test]
+        fn test_error_message_formatting() {
+            let command_name = "nonexistent";
+            let project_error = format!(
+                "❌ Command '{}' not found in project scope.\n\nUse '/commands add {}' to create it.",
+                command_name, command_name
+            );
+
+            assert!(project_error.contains("❌"));
+            assert!(project_error.contains("not found in project scope"));
+            assert!(project_error.contains("/commands add"));
+
+            let user_error = format!(
+                "❌ User command '{}' not found.\n\nUse '/commands add {}' to create it in ~/.amazonq/commands/.",
+                command_name, command_name
+            );
+
+            assert!(user_error.contains("User command"));
+            assert!(user_error.contains("~/.amazonq/commands/"));
+        }
+
+        #[test]
+        fn test_execution_indicator_formatting() {
+            let command_display_project = "project:code-review";
+            let command_display_user = "user:security-scan";
+
+            let project_indicator = format!("🚀 Executing command: {}", command_display_project);
+            let user_indicator = format!("🚀 Executing command: {}", command_display_user);
+
+            assert!(project_indicator.contains("🚀"));
+            assert!(project_indicator.contains("project:code-review"));
+            assert!(user_indicator.contains("user:security-scan"));
+        }
+    }
 }

@@ -347,8 +347,10 @@ mod tests {
     #[test]
     fn test_disabled_analytics() {
         let storage = Arc::new(MockStorage::new());
-        let mut config = AnalyticsConfig::default();
-        config.enabled = false;
+        let config = AnalyticsConfig {
+            enabled: false,
+            ..Default::default()
+        };
         let tracker = UsageTracker::new(storage, config);
 
         let parameters = HashMap::new();
@@ -380,8 +382,10 @@ mod tests {
     #[test]
     fn test_buffer_flushing() {
         let storage = Arc::new(MockStorage::new());
-        let mut config = AnalyticsConfig::default();
-        config.buffer_size = 2; // Small buffer for testing
+        let config = AnalyticsConfig {
+            buffer_size: 2, // Small buffer for testing
+            ..Default::default()
+        };
         let tracker = UsageTracker::new(storage.clone(), config);
 
         let parameters = HashMap::new();
