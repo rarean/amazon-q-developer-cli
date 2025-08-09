@@ -144,12 +144,15 @@ impl CommandsSubcommand {
                     output.push_str(&format!("📝 Description: {}\n", description));
                 }
 
-                if !command.frontmatter.parameters.is_empty() {
-                    output.push_str("\n🔧 Parameters:\n");
-                    for param in &command.frontmatter.parameters {
-                        let description = param.description.as_deref().unwrap_or("No description");
-                        output.push_str(&format!("  • {}: {}\n", param.name, description));
-                    }
+                if !command.frontmatter.tags.is_empty() {
+                    output.push_str(&format!("🏷️  Tags: {}\n", command.frontmatter.tags.join(", ")));
+                }
+
+                if !command.frontmatter.allowed_tools.is_empty() {
+                    output.push_str(&format!(
+                        "🔧 Allowed Tools: {}\n",
+                        command.frontmatter.allowed_tools.join(", ")
+                    ));
                 }
 
                 if !command.frontmatter.allowed_tools.is_empty() {
@@ -198,10 +201,11 @@ impl CommandsSubcommand {
                 if let Some(description) = &command.frontmatter.description {
                     output.push_str(&format!("     📝 {}\n", description));
                 }
-                if !command.frontmatter.parameters.is_empty() {
+                if !command.frontmatter.tags.is_empty() {
                     output.push_str(&format!(
-                        "     🔧 {} parameter(s)\n",
-                        command.frontmatter.parameters.len()
+                        "     🏷️  {} tag(s): {}\n",
+                        command.frontmatter.tags.len(),
+                        command.frontmatter.tags.join(", ")
                     ));
                 }
                 output.push('\n');
@@ -562,3 +566,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod integration_tests;

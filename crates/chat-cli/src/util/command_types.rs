@@ -10,10 +10,7 @@ use serde::{
     Serialize,
 };
 
-use crate::util::command_frontmatter::{
-    CommandFrontmatter,
-    Parameter,
-};
+use crate::util::command_frontmatter::CommandFrontmatter;
 
 /// Scope of a command (project-specific or global)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
@@ -84,24 +81,19 @@ impl CustomCommand {
         }
     }
 
-    /// Get parameters defined in frontmatter
-    pub fn parameters(&self) -> &[Parameter] {
-        &self.frontmatter.parameters
-    }
-
     /// Get allowed tools from frontmatter
     pub fn allowed_tools(&self) -> &[String] {
         &self.frontmatter.allowed_tools
     }
 
-    /// Check if thinking mode is enabled
-    pub fn thinking_mode_enabled(&self) -> bool {
-        self.frontmatter.thinking_mode.unwrap_or(false)
+    /// Check if thinking mode is enabled (not supported in simplified frontmatter)
+    pub fn thinking_mode_enabled() -> bool {
+        false // Simplified frontmatter doesn't support thinking mode
     }
 
     /// Get command timeout in seconds
-    pub fn timeout_seconds(&self) -> Option<u32> {
-        self.frontmatter.timeout
+    pub fn timeout_seconds(&self) -> Option<u64> {
+        self.frontmatter.timeout_seconds
     }
 
     /// Validate command name
@@ -123,6 +115,13 @@ impl CustomCommand {
         if !name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
             return Err(CommandError::InvalidName(
                 "Command name can only contain alphanumeric characters, hyphens, and underscores".to_string(),
+            ));
+        }
+
+        // Check that name doesn't start with a number
+        if name.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+            return Err(CommandError::InvalidName(
+                "Command name cannot start with a number".to_string(),
             ));
         }
 
@@ -225,9 +224,8 @@ mod tests {
 
         assert_eq!(command.name, "simple-command");
         assert!(command.content.starts_with("# Simple Command"));
-        assert_eq!(command.frontmatter.parameters.len(), 0);
         assert_eq!(command.frontmatter.allowed_tools.len(), 0);
-        assert!(!command.thinking_mode_enabled());
+        assert!(!CustomCommand::thinking_mode_enabled());
         assert_eq!(command.timeout_seconds(), None);
     }
 
@@ -237,23 +235,15 @@ mod tests {
         let file_path = dir.path().join("advanced-command.md");
 
         let content = r#"---
-name: "Advanced Command"
 description: "A command with frontmatter"
 allowed_tools: ["fs_read", "execute_bash"]
-thinking_mode: true
-timeout: 60
-parameters:
-  - name: "action"
-    type: "string"
-    required: true
-    options: ["start", "stop", "restart"]
+timeout_seconds: 60
+tags: ["advanced", "test"]
 ---
 
 # Advanced Command
 
-This command has frontmatter configuration.
-
-Action: {{action}}"#;
+This command has frontmatter configuration."#;
 
         fs::write(&file_path, content).unwrap();
 
@@ -261,12 +251,14 @@ Action: {{action}}"#;
 
         assert_eq!(command.name, "advanced-command");
         assert!(command.content.starts_with("# Advanced Command"));
-        assert_eq!(command.frontmatter.name, Some("Advanced Command".to_string()));
+        assert_eq!(
+            command.frontmatter.description,
+            Some("A command with frontmatter".to_string())
+        );
         assert_eq!(command.frontmatter.allowed_tools, vec!["fs_read", "execute_bash"]);
-        assert!(command.thinking_mode_enabled());
+        assert!(!CustomCommand::thinking_mode_enabled()); // Simplified frontmatter doesn't support thinking mode
         assert_eq!(command.timeout_seconds(), Some(60));
-        assert_eq!(command.parameters().len(), 1);
-        assert_eq!(command.parameters()[0].name, "action");
+        assert_eq!(command.frontmatter.tags, vec!["advanced", "test"]);
     }
 
     #[test]
