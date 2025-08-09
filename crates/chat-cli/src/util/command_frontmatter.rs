@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use serde::{
     Deserialize,
     Serialize,
@@ -11,61 +9,20 @@ use crate::util::command_types::CommandError;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct CommandFrontmatter {
-    // Basic metadata
-    pub name: Option<String>,
+    /// Human-readable description of the command
     pub description: Option<String>,
-    pub version: Option<String>,
-    pub author: Option<String>,
-    pub category: Option<String>,
-    pub tags: Vec<String>,
 
-    // Tool permissions (Phase 1 requirement)
+    /// List of allowed tools this command can use
     pub allowed_tools: Vec<String>,
-    pub thinking_mode: Option<bool>,
-    pub timeout: Option<u32>,
 
-    // Parameter definitions (Phase 3 feature)
-    pub parameters: Vec<Parameter>,
+    /// Timeout in seconds for command execution
+    pub timeout_seconds: Option<u64>,
 
-    // Extensibility for future features
-    #[serde(flatten)]
-    pub additional: HashMap<String, serde_json::Value>,
-}
+    /// Maximum output size in bytes
+    pub max_output_size: Option<usize>,
 
-/// Parameter definition for command frontmatter
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Parameter {
-    pub name: String,
-    #[serde(rename = "type")]
-    pub param_type: ParameterType,
-    #[serde(default)]
-    pub required: bool,
-    pub default: Option<serde_json::Value>,
-    pub description: Option<String>,
-    pub options: Option<Vec<serde_json::Value>>,
-    pub validation: Option<ParameterValidation>,
-}
-
-/// Supported parameter types
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ParameterType {
-    String,
-    Integer,
-    Float,
-    Boolean,
-    Array,
-    Object,
-}
-
-/// Parameter validation constraints
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ParameterValidation {
-    pub min_length: Option<usize>,
-    pub max_length: Option<usize>,
-    pub pattern: Option<String>,
-    pub min_value: Option<f64>,
-    pub max_value: Option<f64>,
+    /// Tags for organizing commands
+    pub tags: Vec<String>,
 }
 
 impl CommandFrontmatter {
@@ -89,13 +46,8 @@ impl CommandFrontmatter {
 
     /// Validate frontmatter configuration
     pub fn validate(&self) -> Result<(), CommandError> {
-        // Validate parameter definitions
-        for param in &self.parameters {
-            param.validate()?;
-        }
-
         // Validate timeout if specified
-        if let Some(timeout) = self.timeout {
+        if let Some(timeout) = self.timeout_seconds {
             if timeout == 0 || timeout > 300 {
                 return Err(CommandError::InvalidFormat(
                     "Timeout must be between 1 and 300 seconds".to_string(),
@@ -103,71 +55,47 @@ impl CommandFrontmatter {
             }
         }
 
-        Ok(())
-    }
-}
-
-impl Parameter {
-    /// Validate parameter definition
-    pub fn validate(&self) -> Result<(), CommandError> {
-        // Validate parameter name
-        if self.name.is_empty() {
-            return Err(CommandError::InvalidFormat(
-                "Parameter name cannot be empty".to_string(),
-            ));
-        }
-
-        // Validate parameter name format (alphanumeric + underscore)
-        if !self.name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-            return Err(CommandError::InvalidFormat(format!(
-                "Invalid parameter name '{}': only alphanumeric characters and underscores allowed",
-                self.name
-            )));
-        }
-
-        // Validate default value type matches parameter type
-        if let Some(default_value) = &self.default {
-            if !self.is_value_type_compatible(default_value) {
-                return Err(CommandError::InvalidFormat(format!(
-                    "Default value type doesn't match parameter type for '{}'",
-                    self.name
-                )));
+        // Validate max_output_size if specified
+        if let Some(max_size) = self.max_output_size {
+            if max_size == 0 || max_size > 1024 * 1024 {
+                return Err(CommandError::InvalidFormat(
+                    "Max output size must be between 1 byte and 1MB".to_string(),
+                ));
             }
         }
 
-        // Validate options if specified
-        if let Some(options) = &self.options {
-            if options.is_empty() {
-                return Err(CommandError::InvalidFormat(format!(
-                    "Options list cannot be empty for parameter '{}'",
-                    self.name
-                )));
-            }
-
-            for option in options {
-                if !self.is_value_type_compatible(option) {
-                    return Err(CommandError::InvalidFormat(format!(
-                        "Option value type doesn't match parameter type for '{}'",
-                        self.name
-                    )));
-                }
+        // Validate allowed_tools
+        for tool in &self.allowed_tools {
+            if tool.trim().is_empty() {
+                return Err(CommandError::InvalidFormat("Tool names cannot be empty".to_string()));
             }
         }
 
         Ok(())
     }
 
-    /// Check if a value is compatible with the parameter type
-    fn is_value_type_compatible(&self, value: &serde_json::Value) -> bool {
-        match (&self.param_type, value) {
-            (ParameterType::String, serde_json::Value::String(_)) => true,
-            (ParameterType::Integer, serde_json::Value::Number(n)) => n.is_i64(),
-            (ParameterType::Float, serde_json::Value::Number(_)) => true,
-            (ParameterType::Boolean, serde_json::Value::Bool(_)) => true,
-            (ParameterType::Array, serde_json::Value::Array(_)) => true,
-            (ParameterType::Object, serde_json::Value::Object(_)) => true,
-            _ => false,
-        }
+    /// Convert frontmatter to YAML string
+    #[allow(dead_code)]
+    pub fn to_yaml(&self) -> Result<String, CommandError> {
+        serde_yaml::to_string(self).map_err(|e| CommandError::InvalidFormat(format!("YAML serialization error: {}", e)))
+    }
+
+    /// Check if a specific tool is allowed
+    #[allow(dead_code)]
+    pub fn is_tool_allowed(&self, tool_name: &str) -> bool {
+        self.allowed_tools.contains(&tool_name.to_string())
+    }
+
+    /// Get timeout with default fallback
+    #[allow(dead_code)]
+    pub fn get_timeout_seconds(&self) -> u64 {
+        self.timeout_seconds.unwrap_or(30)
+    }
+
+    /// Get max output size with default fallback
+    #[allow(dead_code)]
+    pub fn get_max_output_size(&self) -> usize {
+        self.max_output_size.unwrap_or(4096)
     }
 }
 
@@ -178,82 +106,81 @@ mod tests {
     #[test]
     fn test_parse_frontmatter_with_yaml() {
         let content = r#"---
-name: "Test Command"
-description: "A test command"
+description: "Test command"
 allowed_tools: ["execute_bash"]
-parameters:
-  - name: "action"
-    type: "string"
-    required: true
-    options: ["start", "stop"]
+timeout_seconds: 60
+tags: ["test"]
 ---
 
-# Test Command Content
-
-This is the command content."#;
+# Test Command
+This is test content."#;
 
         let (frontmatter, markdown) = CommandFrontmatter::parse_from_content(content).unwrap();
 
-        assert_eq!(frontmatter.name, Some("Test Command".to_string()));
-        assert_eq!(frontmatter.description, Some("A test command".to_string()));
+        assert_eq!(frontmatter.description, Some("Test command".to_string()));
         assert_eq!(frontmatter.allowed_tools, vec!["execute_bash"]);
-        assert_eq!(frontmatter.parameters.len(), 1);
-        assert_eq!(frontmatter.parameters[0].name, "action");
-        assert!(markdown.starts_with("# Test Command Content"));
+        assert_eq!(frontmatter.timeout_seconds, Some(60));
+        assert_eq!(frontmatter.tags, vec!["test"]);
+        assert!(markdown.starts_with("# Test Command"));
     }
 
     #[test]
     fn test_parse_frontmatter_without_yaml() {
-        let content = "# Simple Command\n\nThis is a simple command without frontmatter.";
+        let content = "# Simple Command\nThis has no frontmatter.";
 
         let (frontmatter, markdown) = CommandFrontmatter::parse_from_content(content).unwrap();
 
-        assert_eq!(frontmatter.name, None);
-        assert_eq!(frontmatter.allowed_tools.len(), 0);
-        assert_eq!(frontmatter.parameters.len(), 0);
+        assert_eq!(frontmatter.description, None);
+        assert!(frontmatter.allowed_tools.is_empty());
         assert_eq!(markdown, content);
     }
 
     #[test]
-    fn test_parameter_validation() {
-        let valid_param = Parameter {
-            name: "test_param".to_string(),
-            param_type: ParameterType::String,
-            required: true,
-            default: Some(serde_json::Value::String("default".to_string())),
-            description: Some("Test parameter".to_string()),
-            options: None,
-            validation: None,
-        };
+    fn test_frontmatter_validation() {
+        let mut frontmatter = CommandFrontmatter::default();
 
-        assert!(valid_param.validate().is_ok());
+        // Valid frontmatter should pass
+        assert!(frontmatter.validate().is_ok());
 
-        let invalid_param = Parameter {
-            name: "".to_string(),
-            param_type: ParameterType::String,
-            required: false,
-            default: None,
-            description: None,
-            options: None,
-            validation: None,
-        };
+        // Invalid timeout should fail
+        frontmatter.timeout_seconds = Some(0);
+        assert!(frontmatter.validate().is_err());
 
-        assert!(invalid_param.validate().is_err());
+        frontmatter.timeout_seconds = Some(500);
+        assert!(frontmatter.validate().is_err());
+
+        // Valid timeout should pass
+        frontmatter.timeout_seconds = Some(30);
+        assert!(frontmatter.validate().is_ok());
     }
 
     #[test]
-    fn test_type_compatibility() {
-        let string_param = Parameter {
-            name: "test".to_string(),
-            param_type: ParameterType::String,
-            required: false,
-            default: None,
-            description: None,
-            options: None,
-            validation: None,
-        };
+    fn test_tool_permission_checking() {
+        let mut frontmatter = CommandFrontmatter::default();
+        frontmatter.allowed_tools = vec!["execute_bash".to_string(), "fs_read".to_string()];
 
-        assert!(string_param.is_value_type_compatible(&serde_json::Value::String("test".to_string())));
-        assert!(!string_param.is_value_type_compatible(&serde_json::Value::Number(42.into())));
+        assert!(frontmatter.is_tool_allowed("execute_bash"));
+        assert!(frontmatter.is_tool_allowed("fs_read"));
+        assert!(!frontmatter.is_tool_allowed("fs_write"));
+    }
+
+    #[test]
+    fn test_default_values() {
+        let frontmatter = CommandFrontmatter::default();
+
+        assert_eq!(frontmatter.get_timeout_seconds(), 30);
+        assert_eq!(frontmatter.get_max_output_size(), 4096);
+    }
+
+    #[test]
+    fn test_yaml_serialization() {
+        let mut frontmatter = CommandFrontmatter::default();
+        frontmatter.description = Some("Test command".to_string());
+        frontmatter.allowed_tools = vec!["execute_bash".to_string()];
+
+        let yaml = frontmatter.to_yaml().unwrap();
+        assert!(yaml.contains("description: Test command"));
+        assert!(yaml.contains("allowed_tools:"));
+        assert!(yaml.contains("- execute_bash"));
     }
 }

@@ -401,17 +401,11 @@ Some other content.
     fn test_validate_bash_permissions_with_frontmatter() {
         let _preprocessor = BashPreprocessor::default();
         let frontmatter = CommandFrontmatter {
-            name: None,
             description: Some("Test command".to_string()),
-            version: None,
-            author: None,
-            category: None,
-            tags: vec![],
             allowed_tools: vec!["Bash(git:*)".to_string()],
-            thinking_mode: None,
-            timeout: None,
-            parameters: vec![],
-            additional: std::collections::HashMap::new(),
+            timeout_seconds: None,
+            max_output_size: None,
+            tags: vec![],
         };
 
         let git_commands = vec![
