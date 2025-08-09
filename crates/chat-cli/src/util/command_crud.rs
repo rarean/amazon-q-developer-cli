@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fs;
 use std::path::{
     Path,
@@ -6,22 +5,15 @@ use std::path::{
 };
 
 use crate::util::command_frontmatter::CommandFrontmatter;
-use crate::util::command_templates::{
-    CommandTemplate,
-    TemplateValues,
-};
 use crate::util::command_types::{
     CommandError,
     CustomCommand,
 };
-use crate::util::template_registry::TemplateRegistry;
 
 /// CRUD operations for custom commands
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct CommandCrud {
-    /// Template registry for command creation
-    template_registry: TemplateRegistry,
     /// Local commands directory
     local_commands_dir: PathBuf,
     /// Global commands directory
@@ -34,13 +26,9 @@ pub struct CommandCrud {
 pub struct CreateCommandOptions {
     /// Command name (will be used as filename)
     pub name: String,
-    /// Template ID to use (optional)
-    pub template_id: Option<String>,
-    /// Template values for instantiation
-    pub template_values: Option<TemplateValues>,
-    /// Direct content (if not using template)
+    /// Direct content
     pub content: Option<String>,
-    /// Direct frontmatter (if not using template)
+    /// Direct frontmatter
     pub frontmatter: Option<CommandFrontmatter>,
     /// Whether to create in global directory
     pub global: bool,
@@ -66,8 +54,6 @@ pub struct UpdateCommandOptions {
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ListCommandOptions {
-    /// Filter by category
-    pub category: Option<String>,
     /// Search query
     pub search: Option<String>,
     /// Include global commands
@@ -82,12 +68,10 @@ pub struct ListCommandOptions {
 pub struct CommandInfo {
     pub name: String,
     pub description: Option<String>,
-    pub category: Option<String>,
     pub tags: Option<Vec<String>>,
     pub is_global: bool,
     pub file_path: PathBuf,
     pub has_frontmatter: bool,
-    pub parameter_count: usize,
 }
 
 #[allow(dead_code)]
@@ -95,13 +79,10 @@ impl CommandCrud {
     /// Create a new CommandCrud instance
     #[allow(dead_code)]
     pub fn new() -> Result<Self, CommandError> {
-        let template_registry = TemplateRegistry::with_default_dirs()?;
-
         let local_commands_dir = PathBuf::from(".amazonq/commands");
         let global_commands_dir = dirs::home_dir().map(|home| home.join(".amazonq").join("commands"));
 
         Ok(Self {
-            template_registry,
             local_commands_dir,
             global_commands_dir,
         })
@@ -147,24 +128,10 @@ impl CommandCrud {
         }
 
         // Generate command content
-        let (frontmatter, content) = if let Some(template_id) = &options.template_id {
-            // Use template
-            let template_values = options.template_values.unwrap_or_else(|| TemplateValues {
-                variables: HashMap::new(),
-                frontmatter_overrides: None,
-            });
-
-            let instantiated = self
-                .template_registry
-                .instantiate_template(template_id, &template_values)?;
-            (Some(instantiated.frontmatter), instantiated.content)
-        } else {
-            // Use direct content
-            let content = options
-                .content
-                .unwrap_or_else(|| format!("# {}\n\nCommand implementation goes here.", options.name));
-            (options.frontmatter, content)
-        };
+        let content = options
+            .content
+            .unwrap_or_else(|| format!("# {}\n\nCommand implementation goes here.", options.name));
+        let frontmatter = options.frontmatter;
 
         // Write command file
         let file_content = if let Some(frontmatter) = frontmatter {
@@ -244,10 +211,6 @@ impl CommandCrud {
         }
 
         // Apply filters
-        if let Some(category) = &options.category {
-            commands.retain(|cmd| cmd.category.as_ref() == Some(category));
-        }
-
         if let Some(search) = &options.search {
             let search_lower = search.to_lowercase();
             commands.retain(|cmd| {
@@ -273,16 +236,6 @@ impl CommandCrud {
     pub fn get_command(&self, name: &str, global: bool) -> Result<CustomCommand, CommandError> {
         let file_path = self.find_command_file(name, global)?;
         CustomCommand::from_file(file_path)
-    }
-
-    /// List available templates
-    pub fn list_templates(&self) -> Vec<crate::util::command_templates::TemplateSummary> {
-        self.template_registry.list_templates()
-    }
-
-    /// Get template details
-    pub fn get_template(&self, id: &str) -> Option<&CommandTemplate> {
-        self.template_registry.get_template(id)
     }
 
     // Helper methods
@@ -345,24 +298,19 @@ impl CommandCrud {
         let command = CustomCommand::from_file(path.to_path_buf())?;
 
         let description = command.frontmatter.description.clone();
-        let category = command.frontmatter.category.clone();
         let tags = if command.frontmatter.tags.is_empty() {
             None
         } else {
             Some(command.frontmatter.tags.clone())
         };
 
-        let parameter_count = command.frontmatter.parameters.len();
-
         Ok(CommandInfo {
             name: name.to_string(),
             description,
-            category,
             tags,
             is_global,
             file_path: path.to_path_buf(),
             has_frontmatter: true, // Always true since frontmatter is not optional
-            parameter_count,
         })
     }
 
@@ -421,8 +369,6 @@ mod tests {
 
         let options = CreateCommandOptions {
             name: "test-command".to_string(),
-            template_id: None,
-            template_values: None,
             content: Some("# Test Command\n\nThis is a test.".to_string()),
             frontmatter: None,
             global: false,
@@ -438,48 +384,12 @@ mod tests {
     }
 
     #[test]
-    fn test_create_command_with_template() {
-        let (crud, _temp_dir) = create_test_crud();
-
-        let mut template_values = TemplateValues {
-            variables: HashMap::new(),
-            frontmatter_overrides: None,
-        };
-        template_values
-            .variables
-            .insert("command_name".to_string(), "My Test Command".to_string());
-        template_values
-            .variables
-            .insert("command_description".to_string(), "A test command".to_string());
-
-        let options = CreateCommandOptions {
-            name: "templated-command".to_string(),
-            template_id: Some("basic-command".to_string()),
-            template_values: Some(template_values),
-            content: None,
-            frontmatter: None,
-            global: false,
-            force: false,
-        };
-
-        let result = crud.create_command(options);
-        assert!(result.is_ok());
-
-        let file_path = result.unwrap();
-        let content = fs::read_to_string(&file_path).unwrap();
-        assert!(content.contains("My Test Command"));
-        assert!(content.contains("---")); // Has frontmatter
-    }
-
-    #[test]
     fn test_list_commands() {
         let (crud, _temp_dir) = create_test_crud();
 
         // Create a test command
         let options = CreateCommandOptions {
             name: "list-test".to_string(),
-            template_id: None,
-            template_values: None,
             content: Some("# List Test\n\nTest command for listing.".to_string()),
             frontmatter: None,
             global: false,
@@ -489,7 +399,6 @@ mod tests {
 
         // List commands
         let list_options = ListCommandOptions {
-            category: None,
             search: None,
             include_global: true,
             include_local: true,
@@ -507,8 +416,6 @@ mod tests {
         // Create a command to delete
         let options = CreateCommandOptions {
             name: "delete-test".to_string(),
-            template_id: None,
-            template_values: None,
             content: Some("# Delete Test\n\nTest command for deletion.".to_string()),
             frontmatter: None,
             global: false,
@@ -529,8 +436,6 @@ mod tests {
 
         let options = CreateCommandOptions {
             name: "duplicate-test".to_string(),
-            template_id: None,
-            template_values: None,
             content: Some("# First Command".to_string()),
             frontmatter: None,
             global: false,
