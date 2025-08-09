@@ -1,21 +1,20 @@
 use std::collections::HashMap;
-use std::path::{
-    Path,
-    PathBuf,
-};
+use std::path::PathBuf;
 
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::bash_preprocessor::BashPreprocessor;
-use crate::util::command_import_export::{
-    CommandImportExport,
-    ExportFormat,
-};
 use crate::util::command_types::{
     CommandError,
     CommandScope,
     CustomCommand,
 };
+
+#[cfg(test)]
+pub mod test_utils;
+
+#[cfg(test)]
+mod integration_tests;
 
 /// Manages custom commands for the Amazon Q CLI
 pub struct CommandManager {
@@ -80,8 +79,10 @@ impl CommandManager {
         // Write template to file
         std::fs::write(&file_path, template)?;
 
-        // Open editor
-        Self::open_editor(&file_path)?;
+        // Open editor (skip in test mode for performance)
+        if !cfg!(test) && std::env::var("EDITOR").unwrap_or_default() != "true" {
+            Self::open_editor(&file_path)?;
+        }
 
         // Load the command into cache
         let command = CustomCommand::from_file(file_path)?;
@@ -302,6 +303,33 @@ impl CommandManager {
         self.cache.clear();
     }
 
+    /// Test accessor methods for integration tests
+    #[cfg(test)]
+    pub fn get_project_commands_dir(&self) -> &std::path::PathBuf {
+        &self.project_commands_dir
+    }
+
+    #[cfg(test)]
+    pub fn get_cache(&self) -> &std::collections::HashMap<String, crate::util::command_types::CustomCommand> {
+        &self.cache
+    }
+
+    #[cfg(test)]
+    pub fn clear_cache_for_test(&mut self) {
+        self.cache.clear();
+    }
+
+    /// Create a CommandManager for testing with custom directories
+    #[cfg(test)]
+    pub fn new_for_test(project_commands_dir: PathBuf, user_commands_dir: PathBuf) -> Self {
+        Self {
+            project_commands_dir,
+            user_commands_dir,
+            cache: HashMap::new(),
+            bash_preprocessor: BashPreprocessor::default(),
+        }
+    }
+
     /// List all available commands
     #[allow(dead_code)]
     pub fn list_commands(&mut self) -> Result<Vec<String>, CommandError> {
@@ -328,7 +356,23 @@ impl CommandManager {
 
     /// Create a command template
     fn create_command_template(name: &str) -> String {
-        let display_name = name.replace(['-', '_'], " ");
+        let display_name = name
+            .replace(['-', '_'], " ")
+            .split_whitespace()
+            .map(|word| {
+                let mut chars = word.chars();
+                match chars.next() {
+                    None => String::new(),
+                    Some(first) => {
+                        let mut result = first.to_uppercase().collect::<String>();
+                        result.push_str(chars.as_str());
+                        result
+                    },
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+
         format!(
             "# {}\n\n\
             Brief description of what this command does.\n\n\
@@ -382,133 +426,6 @@ impl CommandManager {
         }
 
         Ok(())
-    }
-
-    /// Export a command to a file
-    #[allow(dead_code)]
-    pub fn export_command(
-        &mut self,
-        name: &str,
-        output_path: &Path,
-        format: ExportFormat,
-    ) -> Result<String, CommandError> {
-        let command = self.get_command(name)?;
-        CommandImportExport::export_command(command, output_path, format)?;
-
-        Ok(format!(
-            "✅ Command '{}' exported to {} (format: {:?})",
-            name,
-            output_path.display(),
-            format
-        ))
-    }
-
-    /// Export all project commands to a directory
-    #[allow(dead_code)]
-    pub fn export_all_commands(&mut self, output_dir: &Path, format: ExportFormat) -> Result<String, CommandError> {
-        let command_names = self.list_commands()?;
-        let mut commands = HashMap::new();
-
-        for name in &command_names {
-            let command = self.get_command(name)?;
-            commands.insert(name.clone(), command.clone());
-        }
-
-        CommandImportExport::export_commands(&commands, output_dir, format)?;
-
-        Ok(format!(
-            "✅ Exported {} commands to {} (format: {:?})",
-            commands.len(),
-            output_dir.display(),
-            format
-        ))
-    }
-
-    /// Import a command from a file
-    #[allow(dead_code)]
-    pub fn import_command(&mut self, file_path: &Path, force: bool) -> Result<String, CommandError> {
-        let (name, command) = CommandImportExport::import_command(file_path)?;
-
-        // Validate the imported command
-        CommandImportExport::validate_command(&command)?;
-
-        // Check if command already exists
-        let command_file = self.project_commands_dir.join(format!("{}.md", name));
-        if command_file.exists() && !force {
-            return Err(CommandError::AlreadyExists(format!(
-                "Command '{}' already exists. Use --force to overwrite.",
-                name
-            )));
-        }
-
-        // Ensure commands directory exists
-        std::fs::create_dir_all(&self.project_commands_dir)?;
-
-        // Write the command as markdown (native format)
-        CommandImportExport::export_command(&command, &command_file, ExportFormat::Markdown)?;
-
-        // Update cache
-        self.cache.insert(name.clone(), command);
-
-        Ok(format!(
-            "✅ Command '{}' imported successfully!\n   Use '/project:{}' to execute it.",
-            name, name
-        ))
-    }
-
-    /// Import multiple commands from a directory
-    #[allow(dead_code)]
-    pub fn import_commands(&mut self, import_dir: &Path, force: bool) -> Result<String, CommandError> {
-        let commands = CommandImportExport::import_commands(import_dir)?;
-
-        if commands.is_empty() {
-            return Ok("No valid commands found to import.".to_string());
-        }
-
-        let mut imported_count = 0;
-        let mut skipped_count = 0;
-        let mut errors = Vec::new();
-
-        // Ensure commands directory exists
-        std::fs::create_dir_all(&self.project_commands_dir)?;
-
-        for (name, command) in commands {
-            // Validate the command
-            if let Err(e) = CommandImportExport::validate_command(&command) {
-                errors.push(format!("Command '{}': {}", name, e));
-                continue;
-            }
-
-            // Check if command already exists
-            let command_file = self.project_commands_dir.join(format!("{}.md", name));
-            if command_file.exists() && !force {
-                skipped_count += 1;
-                continue;
-            }
-
-            // Import the command
-            match CommandImportExport::export_command(&command, &command_file, ExportFormat::Markdown) {
-                Ok(_) => {
-                    self.cache.insert(name, command);
-                    imported_count += 1;
-                },
-                Err(e) => {
-                    errors.push(format!("Failed to import '{}': {}", name, e));
-                },
-            }
-        }
-
-        let mut result = format!("✅ Import completed: {} commands imported", imported_count);
-
-        if skipped_count > 0 {
-            result.push_str(&format!(", {} skipped (already exist)", skipped_count));
-        }
-
-        if !errors.is_empty() {
-            result.push_str(&format!("\n⚠️  Errors:\n{}", errors.join("\n")));
-        }
-
-        Ok(result)
     }
 }
 
@@ -620,5 +537,146 @@ mod tests {
         let namespaced_name = "frontend/component";
         let namespaced_cache_key = format!("user:{}", namespaced_name);
         assert_eq!(namespaced_cache_key, "user:frontend/component");
+    }
+
+    #[tokio::test]
+    async fn test_add_command_creates_file() {
+        use tempfile::TempDir;
+
+        // Create a temporary directory for testing
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let commands_dir = temp_dir.path().join(".amazonq").join("commands");
+
+        // Create Os instance for testing
+        let os = crate::os::Os::new().await.unwrap();
+
+        // Create command manager with temp directory
+        let mut manager = CommandManager {
+            project_commands_dir: commands_dir.clone(),
+            user_commands_dir: temp_dir.path().join(".amazonq").join("user_commands"),
+            cache: HashMap::new(),
+            bash_preprocessor: BashPreprocessor::default(),
+        };
+
+        // Test adding a command
+        let command_name = "test-command";
+
+        // Mock the editor opening by setting a dummy editor that does nothing
+        unsafe {
+            std::env::set_var("EDITOR", "true"); // 'true' command does nothing and exits successfully
+        }
+
+        let result = manager.add_command(command_name, &os);
+
+        // Restore original editor
+        unsafe {
+            std::env::remove_var("EDITOR");
+        }
+
+        // Check that the operation succeeded
+        assert!(result.is_ok(), "add_command should succeed: {:?}", result);
+
+        // Check that the file was created
+        let expected_file_path = commands_dir.join(format!("{}.md", command_name));
+        assert!(expected_file_path.exists(), "Command file should be created");
+
+        // Check that the file has the expected template content
+        let file_content = std::fs::read_to_string(&expected_file_path).expect("Should be able to read created file");
+
+        // Verify the template structure
+        assert!(
+            file_content.contains("# Test Command"),
+            "Should contain formatted title"
+        );
+        assert!(
+            file_content.contains("## Instructions"),
+            "Should contain Instructions section"
+        );
+        assert!(file_content.contains("## Context"), "Should contain Context section");
+        assert!(file_content.contains("## Examples"), "Should contain Examples section");
+        assert!(
+            file_content.contains("Brief description of what this command does"),
+            "Should contain description placeholder"
+        );
+
+        // Check that the command was loaded into cache
+        assert!(manager.cache.contains_key(command_name), "Command should be cached");
+
+        // Check that the success message is correct
+        let success_message = result.unwrap();
+        assert!(success_message.contains("✅ Command 'test-command' created successfully!"));
+        assert!(success_message.contains("Use '/project:test-command' to execute it"));
+    }
+
+    #[tokio::test]
+    async fn test_add_command_duplicate_error() {
+        use tempfile::TempDir;
+
+        // Create a temporary directory for testing
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let commands_dir = temp_dir.path().join(".amazonq").join("commands");
+        std::fs::create_dir_all(&commands_dir).expect("Failed to create commands dir");
+
+        // Create Os instance for testing
+        let os = crate::os::Os::new().await.unwrap();
+
+        // Create command manager with temp directory
+        let mut manager = CommandManager {
+            project_commands_dir: commands_dir.clone(),
+            user_commands_dir: temp_dir.path().join(".amazonq").join("user_commands"),
+            cache: HashMap::new(),
+            bash_preprocessor: BashPreprocessor::default(),
+        };
+
+        let command_name = "duplicate-command";
+        let file_path = commands_dir.join(format!("{}.md", command_name));
+
+        // Create the file first
+        std::fs::write(&file_path, "existing content").expect("Failed to create existing file");
+
+        // Try to add the same command
+        let result = manager.add_command(command_name, &os);
+
+        // Should return an error
+        assert!(result.is_err(), "add_command should fail for duplicate command");
+
+        match result.unwrap_err() {
+            CommandError::AlreadyExists(name) => {
+                assert_eq!(name, command_name, "Error should contain the command name");
+            },
+            other => panic!("Expected AlreadyExists error, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_add_command_invalid_name() {
+        use tempfile::TempDir;
+
+        // Create a temporary directory for testing
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let commands_dir = temp_dir.path().join(".amazonq").join("commands");
+
+        // Create Os instance for testing
+        let os = crate::os::Os::new().await.unwrap();
+
+        // Create command manager with temp directory
+        let mut manager = CommandManager {
+            project_commands_dir: commands_dir,
+            user_commands_dir: temp_dir.path().join(".amazonq").join("user_commands"),
+            cache: HashMap::new(),
+            bash_preprocessor: BashPreprocessor::default(),
+        };
+
+        // Test with invalid command names
+        let invalid_names = ["invalid name", "help", "", "command/with/slash"];
+
+        for invalid_name in &invalid_names {
+            let result = manager.add_command(invalid_name, &os);
+            assert!(
+                result.is_err(),
+                "add_command should fail for invalid name: '{}'",
+                invalid_name
+            );
+        }
     }
 }
