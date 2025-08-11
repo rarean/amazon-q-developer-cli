@@ -7,9 +7,17 @@ set -euo pipefail
 
 # Configuration
 BINARY_PATH="${1:-target/universal-apple-darwin/release/q}"
-DMG_NAME="${2:-Amazon-Q-CLI-universal.dmg}"
-VOLUME_NAME="Amazon Q CLI"
-APP_NAME="q"
+
+# Check if this is an alpha build
+if [[ "${Q_CLI_ALPHA:-}" == "1" ]]; then
+    DMG_NAME="${2:-Amazon-Q-CLI-Alpha-universal.dmg}"
+    VOLUME_NAME="Amazon Q CLI Alpha"
+    APP_NAME="q-alpha"
+else
+    DMG_NAME="${2:-Amazon-Q-CLI-universal.dmg}"
+    VOLUME_NAME="Amazon Q CLI"
+    APP_NAME="q"
+fi
 
 # Validate inputs
 if [[ ! -f "$BINARY_PATH" ]]; then
@@ -47,6 +55,35 @@ if [[ -f "LICENSE.APACHE" ]]; then
 fi
 
 # Create installation instructions
+if [[ "${Q_CLI_ALPHA:-}" == "1" ]]; then
+cat > "$DMG_TEMP_DIR/INSTALL.txt" << EOF
+Amazon Q CLI Alpha Installation Instructions
+
+⚠️  ALPHA VERSION - For Testing Only
+This alpha version runs in parallel with the stable version.
+
+1. Drag the 'q-alpha' executable to your Applications folder (or any location in your PATH)
+2. Open Terminal
+3. If you copied to Applications, add to PATH:
+   echo 'export PATH="/Applications:\$PATH"' >> ~/.zshrc
+   source ~/.zshrc
+4. Run: q-alpha --version
+
+Alpha Version Characteristics:
+- Binary name: q-alpha
+- Bundle ID: com.amazon.codewhisperer.alpha
+- Data directory: ~/Library/Application Support/amazon-q-alpha/
+- Can run alongside stable version without conflicts
+
+Note: This is an unsigned application. On first run:
+- Right-click the 'q-alpha' executable and select "Open"
+- Click "Open" when prompted about unidentified developer
+- Alternatively, run: xattr -d com.apple.quarantine /path/to/q-alpha
+
+For more information, visit:
+https://github.com/aws/amazon-q-developer-cli
+EOF
+else
 cat > "$DMG_TEMP_DIR/INSTALL.txt" << 'EOF'
 Amazon Q CLI Installation Instructions
 
@@ -65,6 +102,7 @@ Note: This is an unsigned application. On first run:
 For more information, visit:
 https://github.com/aws/amazon-q-developer-cli
 EOF
+fi
 
 # Remove any existing DMG
 rm -f "$DMG_NAME"
