@@ -9,7 +9,13 @@ use quote::{
 
 // TODO(brandonskiser): update bundle identifier for signed builds
 #[cfg(target_os = "macos")]
-const MACOS_BUNDLE_IDENTIFIER: &str = "com.amazon.codewhisperer";
+fn get_bundle_identifier() -> &'static str {
+    if std::env::var("Q_CLI_ALPHA").is_ok() {
+        "com.amazon.codewhisperer.alpha"
+    } else {
+        "com.amazon.codewhisperer"
+    }
+}
 
 const DEF: &str = include_str!("./telemetry_definitions.json");
 
@@ -71,7 +77,7 @@ fn write_plist() {
 </dict>
 </plist>
 "#,
-        MACOS_BUNDLE_IDENTIFIER,
+        get_bundle_identifier(),
         option_env!("AMAZON_Q_BUILD_HASH").unwrap_or("unknown"),
         option_env!("AMAZON_Q_BUILD_DATETIME").unwrap_or("unknown"),
         env!("CARGO_PKG_VERSION")

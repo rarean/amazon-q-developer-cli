@@ -1,4 +1,5 @@
 import pathlib
+import os
 
 
 APP_NAME = "Amazon Q"
@@ -11,8 +12,20 @@ TAURI_PRODUCT_NAME = "q_desktop"
 LINUX_PACKAGE_NAME = "amazon-q"
 
 # macos specific
-MACOS_BUNDLE_ID = "com.amazon.codewhisperer"
-DMG_NAME = APP_NAME
+def get_bundle_id():
+    """Get bundle ID based on alpha environment variable"""
+    if os.environ.get("Q_CLI_ALPHA"):
+        return "com.amazon.codewhisperer.alpha"
+    return "com.amazon.codewhisperer"
+
+def get_dmg_name():
+    """Get DMG name based on alpha environment variable"""
+    if os.environ.get("Q_CLI_ALPHA"):
+        return "Amazon Q Alpha"
+    return APP_NAME
+
+MACOS_BUNDLE_ID = get_bundle_id()
+DMG_NAME = get_dmg_name()
 
 # Linux specific
 LINUX_ARCHIVE_NAME = "q"

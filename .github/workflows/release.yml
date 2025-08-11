@@ -14,6 +14,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  Q_CLI_ALPHA: 1  # Enable alpha build mode for releases
 
 jobs:
   build-macos:
@@ -37,16 +38,21 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-alpha-release-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
+            ${{ runner.os }}-cargo-alpha-release-
             ${{ runner.os }}-cargo-release-
             ${{ runner.os }}-cargo-
 
-      - name: Build Intel binary
+      - name: Build Intel binary (Alpha)
         run: cargo build --release --target x86_64-apple-darwin --bin chat_cli
+        env:
+          Q_CLI_ALPHA: 1
 
-      - name: Build Apple Silicon binary
+      - name: Build Apple Silicon binary (Alpha)
         run: cargo build --release --target aarch64-apple-darwin --bin chat_cli
+        env:
+          Q_CLI_ALPHA: 1
 
       - name: Create universal binary
         run: |
@@ -55,15 +61,28 @@ jobs:
             target/x86_64-apple-darwin/release/chat_cli \
             target/aarch64-apple-darwin/release/chat_cli
 
-      - name: Create DMG package
+      - name: Verify alpha bundle identifier
+        run: |
+          echo "=== Verifying Alpha Release Configuration ==="
+          if grep -q "com.amazon.codewhisperer.alpha" crates/chat-cli/src/Info.plist; then
+            echo "✅ Alpha bundle identifier confirmed: com.amazon.codewhisperer.alpha"
+          else
+            echo "❌ Alpha bundle identifier not found!"
+            cat crates/chat-cli/src/Info.plist
+            exit 1
+          fi
+
+      - name: Create Alpha DMG package
         run: |
           chmod +x scripts/github-actions/create-macos-dmg.sh
           ./scripts/github-actions/create-macos-dmg.sh
+        env:
+          Q_CLI_ALPHA: 1
 
       - name: Generate checksums
         run: |
-          shasum -a 256 target/universal-apple-darwin/release/q > q-universal-binary.sha256
-          shasum -a 256 Amazon-Q-CLI-universal.dmg > Amazon-Q-CLI-universal.dmg.sha256
+          shasum -a 256 target/universal-apple-darwin/release/q > q-alpha-universal-binary.sha256
+          shasum -a 256 Amazon-Q-CLI-Alpha-universal.dmg > Amazon-Q-CLI-Alpha-universal.dmg.sha256
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
@@ -71,9 +90,9 @@ jobs:
           name: macos-alpha-release-artifacts
           path: |
             target/universal-apple-darwin/release/q
-            Amazon-Q-CLI-universal.dmg
-            q-universal-binary.sha256
-            Amazon-Q-CLI-universal.dmg.sha256
+            Amazon-Q-CLI-Alpha-universal.dmg
+            q-alpha-universal-binary.sha256
+            Amazon-Q-CLI-Alpha-universal.dmg.sha256
           retention-days: 30
 
   create-release:
@@ -105,36 +124,63 @@ jobs:
           
           ⚠️ **This is an alpha pre-release** built with the new GitHub Actions pipeline. Use for testing only.
           
+          ## Alpha Version Characteristics
+          
+          This alpha version is designed to run **in parallel** with the stable version:
+          - **Binary Name**: \`q-alpha\`
+          - **Bundle ID**: \`com.amazon.codewhisperer.alpha\`
+          - **Data Directory**: \`~/Library/Application Support/amazon-q-alpha/\`
+          - **Log Directory**: \`\$TMPDIR/qlog-alpha\`
+          - **DMG Name**: \`Amazon-Q-CLI-Alpha-universal.dmg\`
+          - **Complete isolation** from stable version
+          
           ## Installation Instructions
           
           ### macOS
           
-          **Option 1: DMG (Recommended)**
-          1. Download \`Amazon-Q-CLI-universal.dmg\`
+          **Option 1: Alpha DMG (Recommended)**
+          1. Download \`Amazon-Q-CLI-Alpha-universal.dmg\`
           2. Double-click to mount the disk image
-          3. Drag 'q' to Applications folder
-          4. Right-click 'q' in Applications → "Open" (first time only)
+          3. Drag 'q-alpha' to Applications folder
+          4. Right-click 'q-alpha' in Applications → "Open" (first time only)
           5. Click "Open" when prompted about unidentified developer
           
-          **Option 2: Direct Binary**
-          1. Download \`q\` (universal binary)
-          2. Move to /usr/local/bin: \`sudo mv q /usr/local/bin/q\`
-          3. Make executable: \`sudo chmod +x /usr/local/bin/q\`
-          4. Remove quarantine: \`sudo xattr -d com.apple.quarantine /usr/local/bin/q\`
+          **Option 2: Direct Alpha Binary**
+          1. Download \`q-alpha\` (alpha universal binary)
+          2. Move to /usr/local/bin: \`sudo mv q-alpha /usr/local/bin/q-alpha\`
+          3. Make executable: \`sudo chmod +x /usr/local/bin/q-alpha\`
+          4. Remove quarantine: \`sudo xattr -d com.apple.quarantine /usr/local/bin/q-alpha\`
           
           ## Verification
           
-          All packages include SHA256 checksums for verification:
+          All alpha packages include SHA256 checksums for verification:
           
           \`\`\`bash
-          # macOS DMG
-          shasum -a 256 Amazon-Q-CLI-universal.dmg
+          # Alpha DMG
+          shasum -a 256 Amazon-Q-CLI-Alpha-universal.dmg
+          # Compare with Amazon-Q-CLI-Alpha-universal.dmg.sha256
           
-          # macOS Binary
+          # Alpha Binary
           shasum -a 256 q
+          # Compare with q-alpha-universal-binary.sha256
           \`\`\`
           
-          Compare with the corresponding .sha256 files.
+          ## Parallel Installation Testing
+          
+          You can safely install this alpha version alongside the stable version:
+          
+          \`\`\`bash
+          # Test alpha version
+          q-alpha --version
+          
+          # Verify data isolation
+          ls ~/Library/Application\ Support/amazon-q*/
+          # Should show both amazon-q/ and amazon-q-alpha/ directories
+          
+          # Test both versions side by side
+          q --version        # stable version
+          q-alpha --version  # alpha version
+          \`\`\`
           
           ## Security Notice
           
@@ -144,31 +190,41 @@ jobs:
           - ✅ **Download only** from official GitHub releases  
           - ✅ **Review build logs** in GitHub Actions for transparency
           - ✅ **Source code** is fully open and auditable
+          - ✅ **Alpha isolation** prevents conflicts with stable version
           
           ## Alpha Release Notes
           
           This alpha release demonstrates:
-          - ✅ Unsigned macOS packages (DMG + universal binary)
+          - ✅ Unsigned macOS packages (Alpha DMG + universal binary)
           - ✅ SHA256 checksum verification
           - ✅ GitHub Actions automated builds
           - ✅ Universal binary support (Intel + Apple Silicon)
-          - ✅ Professional DMG packaging
+          - ✅ Professional Alpha DMG packaging
+          - ✅ **Parallel installation support** with stable version
+          - ✅ **Complete data isolation** (separate directories)
+          - ✅ **Different bundle identifier** for macOS recognition
           
           **Testing Focus:**
-          - Installation process on different macOS versions
+          - Alpha installation process on different macOS versions
+          - Parallel installation with stable version
+          - Data directory isolation verification
+          - Bundle identifier separation
           - Gatekeeper bypass workflow
           - Binary functionality across architectures
-          - DMG mounting and drag-drop installation
+          - Alpha DMG mounting and drag-drop installation
           
           **Known Limitations:**
           - Only macOS packages available (Windows/Linux coming later)
           - Alpha quality - use for testing purposes only
+          - Requires manual setup for separate command names (q-alpha)
           
           ## Feedback
           
           Please report any issues with this alpha release:
           - [GitHub Issues](https://github.com/aws/amazon-q-developer-cli/issues)
           - Tag issues with \`alpha-testing\` label
+          - Include alpha version info: \`q-alpha --version\` output
+          - Mention if testing parallel installation
           
           EOF
 
@@ -182,8 +238,8 @@ jobs:
           prerelease: true
           files: |
             q
-            Amazon-Q-CLI-universal.dmg
-            q-universal-binary.sha256
-            Amazon-Q-CLI-universal.dmg.sha256
+            Amazon-Q-CLI-Alpha-universal.dmg
+            q-alpha-universal-binary.sha256
+            Amazon-Q-CLI-Alpha-universal.dmg.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

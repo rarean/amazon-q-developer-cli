@@ -1,4 +1,4 @@
-name: Build macOS
+name: Build macOS Alpha
 
 on:
   push:
@@ -10,10 +10,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  Q_CLI_ALPHA: 1  # Enable alpha build mode
 
 jobs:
   build-macos:
-    name: Build macOS Universal Binary and DMG
+    name: Build macOS Universal Binary and DMG (Alpha)
     runs-on: macos-latest
     
     steps:
@@ -33,15 +34,20 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-alpha-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
+            ${{ runner.os }}-cargo-alpha-
             ${{ runner.os }}-cargo-
 
-      - name: Build Intel binary
+      - name: Build Intel binary (Alpha)
         run: cargo build --release --target x86_64-apple-darwin --bin chat_cli
+        env:
+          Q_CLI_ALPHA: 1
 
-      - name: Build Apple Silicon binary
+      - name: Build Apple Silicon binary (Alpha)
         run: cargo build --release --target aarch64-apple-darwin --bin chat_cli
+        env:
+          Q_CLI_ALPHA: 1
 
       - name: Create universal binary
         run: |
@@ -60,58 +66,91 @@ jobs:
           chmod +x target/universal-apple-darwin/release/q
           ./target/universal-apple-darwin/release/q --version
 
-      - name: Create DMG package
+      - name: Verify alpha bundle identifier
+        run: |
+          echo "=== Verifying Alpha Build Configuration ==="
+          if grep -q "com.amazon.codewhisperer.alpha" crates/chat-cli/src/Info.plist; then
+            echo "✅ Alpha bundle identifier confirmed: com.amazon.codewhisperer.alpha"
+          else
+            echo "❌ Alpha bundle identifier not found!"
+            cat crates/chat-cli/src/Info.plist
+            exit 1
+          fi
+
+      - name: Create Alpha DMG package
         run: |
           chmod +x scripts/github-actions/create-macos-dmg.sh
           ./scripts/github-actions/create-macos-dmg.sh
+        env:
+          Q_CLI_ALPHA: 1
 
       - name: Generate checksums
         run: |
-          shasum -a 256 target/universal-apple-darwin/release/q > q-universal-binary.sha256
-          shasum -a 256 Amazon-Q-CLI-universal.dmg > Amazon-Q-CLI-universal.dmg.sha256
+          shasum -a 256 target/universal-apple-darwin/release/q > q-alpha-universal-binary.sha256
+          shasum -a 256 Amazon-Q-CLI-Alpha-universal.dmg > Amazon-Q-CLI-Alpha-universal.dmg.sha256
           
-          echo "=== Checksums ==="
-          cat q-universal-binary.sha256
-          cat Amazon-Q-CLI-universal.dmg.sha256
+          echo "=== Alpha Build Checksums ==="
+          cat q-alpha-universal-binary.sha256
+          cat Amazon-Q-CLI-Alpha-universal.dmg.sha256
 
-      - name: Upload binary artifact
+      - name: Upload alpha binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: amazon-q-cli-macos-universal-binary
+          name: amazon-q-cli-macos-alpha-universal-binary
           path: |
             target/universal-apple-darwin/release/q
-            q-universal-binary.sha256
+            q-alpha-universal-binary.sha256
           retention-days: 7
 
-      - name: Upload DMG artifact
+      - name: Upload alpha DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: amazon-q-cli-macos-dmg
+          name: amazon-q-cli-macos-alpha-dmg
           path: |
-            Amazon-Q-CLI-universal.dmg
-            Amazon-Q-CLI-universal.dmg.sha256
+            Amazon-Q-CLI-Alpha-universal.dmg
+            Amazon-Q-CLI-Alpha-universal.dmg.sha256
           retention-days: 7
 
-      - name: Display installation instructions
+      - name: Display alpha installation instructions
         run: |
-          echo "=== macOS Installation Instructions ==="
+          echo "=== macOS Alpha Installation Instructions ==="
           echo ""
-          echo "### Option 1: DMG Installation (Recommended)"
-          echo "1. Download Amazon-Q-CLI-universal.dmg"
+          echo "⚠️  ALPHA VERSION - For Testing Only"
+          echo "This alpha version runs in parallel with the stable version."
+          echo ""
+          echo "### Alpha Version Characteristics:"
+          echo "- Binary name: q-alpha"
+          echo "- Bundle ID: com.amazon.codewhisperer.alpha"
+          echo "- Data Directory: ~/Library/Application Support/amazon-q-alpha/"
+          echo "- Log Directory: \$TMPDIR/qlog-alpha"
+          echo "- Can run alongside stable version without conflicts"
+          echo ""
+          echo "### Option 1: Alpha DMG Installation (Recommended)"
+          echo "1. Download Amazon-Q-CLI-Alpha-universal.dmg"
           echo "2. Double-click to mount the disk image"
-          echo "3. Drag 'q' to Applications folder"
-          echo "4. Right-click 'q' in Applications → 'Open' (first time only)"
+          echo "3. Drag 'q-alpha' to Applications folder"
+          echo "4. Right-click 'q-alpha' → 'Open' (first time only)"
           echo "5. Click 'Open' when prompted about unidentified developer"
           echo ""
-          echo "### Option 2: Direct Binary"
-          echo "1. Download the universal binary 'q'"
-          echo "2. Move to /usr/local/bin or add to PATH"
-          echo "3. Run: chmod +x /path/to/q"
-          echo "4. Run: xattr -d com.apple.quarantine /path/to/q"
+          echo "### Option 2: Direct Alpha Binary"
+          echo "1. Download the alpha universal binary 'q-alpha'"
+          echo "2. Move to /usr/local/bin/q-alpha or add to PATH"
+          echo "3. Run: chmod +x /path/to/q-alpha"
+          echo "4. Run: xattr -d com.apple.quarantine /path/to/q-alpha"
           echo ""
           echo "### Verification"
-          echo "shasum -a 256 Amazon-Q-CLI-universal.dmg"
-          echo "# Compare with Amazon-Q-CLI-universal.dmg.sha256"
+          echo "shasum -a 256 Amazon-Q-CLI-Alpha-universal.dmg"
+          echo "# Compare with Amazon-Q-CLI-Alpha-universal.dmg.sha256"
           echo ""
           echo "### First Run"
-          echo "q --version"
+          echo "q-alpha --version"
+          echo ""
+          echo "### Parallel Installation Testing"
+          echo "# You can run both versions side by side:"
+          echo "q --version        # Stable version"
+          echo "q-alpha --version  # Alpha version"
+          echo ""
+          echo "### Data Isolation Verification"
+          echo "# Alpha version will create separate directories:"
+          echo "ls ~/Library/Application\ Support/amazon-q-alpha/"
+          echo "ls \$TMPDIR/qlog-alpha/"

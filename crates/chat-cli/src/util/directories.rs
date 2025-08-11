@@ -82,10 +82,17 @@ pub fn home_dir(#[cfg_attr(windows, allow(unused_variables))] os: &Os) -> Result
 ///
 /// - Linux: `$XDG_DATA_HOME/amazon-q` or `$HOME/.local/share/amazon-q`
 /// - MacOS: `$HOME/Library/Application Support/amazon-q`
+/// - Alpha builds use `amazon-q-alpha` when Q_CLI_ALPHA environment variable is set
 pub fn fig_data_dir() -> Result<PathBuf> {
+    let app_name = if std::env::var("Q_CLI_ALPHA").is_ok() {
+        "amazon-q-alpha"
+    } else {
+        "amazon-q"
+    };
+
     Ok(dirs::data_local_dir()
         .ok_or(DirectoryError::NoHomeDirectory)?
-        .join("amazon-q"))
+        .join(app_name))
 }
 
 /// Get the macos tempdir from the `confstr` function
@@ -127,12 +134,23 @@ pub fn runtime_dir() -> Result<PathBuf> {
 /// - Linux: `/tmp/fig/$USER/logs`
 /// - MacOS: `$TMPDIR/logs`
 /// - Windows: `%TEMP%\fig\logs`
+/// - Alpha builds use separate log directories when Q_CLI_ALPHA environment variable is set
 pub fn logs_dir() -> Result<PathBuf> {
     cfg_if::cfg_if! {
         if #[cfg(unix)] {
-            Ok(runtime_dir()?.join("qlog"))
+            let log_dir_name = if std::env::var("Q_CLI_ALPHA").is_ok() {
+                "qlog-alpha"
+            } else {
+                "qlog"
+            };
+            Ok(runtime_dir()?.join(log_dir_name))
         } else if #[cfg(windows)] {
-            Ok(std::env::temp_dir().join("amazon-q").join("logs"))
+            let app_name = if std::env::var("Q_CLI_ALPHA").is_ok() {
+                "amazon-q-alpha"
+            } else {
+                "amazon-q"
+            };
+            Ok(std::env::temp_dir().join(app_name).join("logs"))
         }
     }
 }

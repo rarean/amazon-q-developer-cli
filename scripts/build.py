@@ -7,7 +7,7 @@ import os
 import shutil
 import time
 from typing import Any, Mapping, Sequence, List, Optional
-from const import APPLE_TEAM_ID, CHAT_BINARY_NAME, CHAT_PACKAGE_NAME
+from const import APPLE_TEAM_ID, CHAT_BINARY_NAME, CHAT_PACKAGE_NAME, MACOS_BUNDLE_ID
 from util import debug, info, isDarwin, isLinux, run_cmd, run_cmd_output, warn
 from rust import cargo_cmd_name, rust_env, rust_targets
 from importlib import import_module
@@ -262,7 +262,7 @@ def sign_executable(signing_data: CdSigningData, exe_path: pathlib.Path) -> path
     run_cmd(["aws", "s3", "cp", package_path, f"s3://{signing_data.bucket_name}/pre-signed/package.tar.gz"])
 
     info("Sending request...")
-    request_id = cd_signer_create_request(manifest("com.amazon.codewhisperer"))
+    request_id = cd_signer_create_request(manifest(MACOS_BUNDLE_ID))
     cd_signer_start_request(
         request_id=request_id,
         source_key="pre-signed/package.tar.gz",
