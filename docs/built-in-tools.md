@@ -5,10 +5,12 @@ Amazon Q CLI includes several built-in tools that agents can use. This document 
 - [`execute_bash`](#execute_bash-tool) — Execute a shell command.
 - [`fs_read`](#fs_read-tool) — Read files, directories, and images.
 - [`fs_write`](#fs_write-tool) — Create and edit files.
+- [`introspect`](#introspect-tool) — Provide information about Q CLI capabilities and documentation.
 - [`report_issue`](#report_issue-tool) — Open a GitHub issue template.
 - [`knowledge`](#knowledge-tool) — Store and retrieve information in a knowledge base.
 - [`commands`](#commands-tool) — Manage custom commands within the chat session.
 - [`thinking`](#thinking-tool) — Internal reasoning mechanism.
+- [`todo_list`](#todo_list-tool) — Create and manage TODO lists for tracking multi-step tasks.
 - [`use_aws`](#use_aws-tool) — Make AWS CLI API calls.
 
 ## Execute_bash Tool
@@ -24,6 +26,7 @@ Execute the specified bash command on Unix-like systems (Linux, macOS).
   "toolsSettings": {
     "execute_bash": {
       "allowedCommands": ["git status", "git fetch"],
+      "deniedCommands": ["git commit .*", "git push .*"],
       "allowReadOnly": true
     }
   }
@@ -34,7 +37,8 @@ Execute the specified bash command on Unix-like systems (Linux, macOS).
 
 | Option | Type | Default | Description                                                                              |
 |--------|------|---------|------------------------------------------------------------------------------------------|
-| `allowedCommands` | array of strings | `[]` | List of specific commands that are allowed without prompting. Supports regex formatting. Note that regex entered are anchored with \A and \z. |
+| `allowedCommands` | array of strings | `[]` | List of specific commands that are allowed without prompting. Supports regex formatting. Note that regex entered are anchored with \A and \z |
+| `deniedCommands` | array of strings | `[]` | List of specific commands that are denied. Supports regex formatting. Note that regex entered are anchored with \A and \z. Deny rules are evaluated before allow rules |
 | `allowReadOnly` | boolean | `true` | Whether to allow read-only commands without prompting                                    |
 
 ## Fs_read Tool
@@ -47,7 +51,8 @@ Tool for reading files, directories, and images.
 {
   "toolsSettings": {
     "fs_read": {
-      "allowedPaths": ["~/projects", "./src/**"]
+      "allowedPaths": ["~/projects", "./src/**"],
+      "deniedPaths": ["/some/denied/path/", "/another/denied/path/**/file.txt"]
     }
   }
 }
@@ -57,7 +62,8 @@ Tool for reading files, directories, and images.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `allowedPaths` | array of strings | `[]` | List of paths that can be read without prompting. Supports glob patterns. |
+| `allowedPaths` | array of strings | `[]` | List of paths that can be read without prompting. Supports glob patterns. Glob patterns have the same behavior as gitignore. For example, `~/temp` would match `~/temp/child` and `~/temp/child/grandchild` |
+| `deniedPaths` | array of strings | `[]` | List of paths that are denied. Supports glob patterns. Deny rules are evaluated before allow rules. Glob patterns have the same behavior as gitignore. For example, `~/temp` would match `~/temp/child` and `~/temp/child/grandchild`  |
 
 ## Fs_write Tool
 
@@ -69,7 +75,8 @@ Tool for creating and editing files.
 {
   "toolsSettings": {
     "fs_write": {
-      "allowedPaths": ["~/projects/output.txt", "./src/**"]
+      "allowedPaths": ["~/projects/output.txt", "./src/**"],
+      "deniedPaths": ["/some/denied/path/", "/another/denied/path/**/file.txt"]
     }
   }
 }
@@ -79,7 +86,26 @@ Tool for creating and editing files.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `allowedPaths` | array of strings | `[]` | List of paths that can be written to without prompting. Supports glob patterns. |
+| `allowedPaths` | array of strings | `[]` | List of paths that can be written to without prompting. Supports glob patterns. Glob patterns have the same behavior as gitignore.For example, `~/temp` would match `~/temp/child` and `~/temp/child/grandchild` |
+| `deniedPaths` | array of strings | `[]` | List of paths that are denied. Supports glob patterns. Deny rules are evaluated before allow rules. Glob patterns have the same behavior as gitignore.For example, `~/temp` would match `~/temp/child` and `~/temp/child/grandchild` |
+
+## Introspect Tool
+
+Provide information about Q CLI capabilities, features, commands, and documentation. This tool accesses Q CLI's built-in documentation and help content to answer questions about the CLI's functionality.
+
+### Usage
+
+The introspect tool is automatically used when you ask questions about Q CLI itself, such as:
+- "What can you do?"
+- "How do I save conversations?"
+- "What commands are available?"
+- "Do you have feature X?"
+
+### Behavior
+
+- Tries to provide the information that is explicitly documented
+- Accesses README, built-in tools documentation, experiments, and settings information
+- Automatically enters tangent mode when configured to do so and if we set the setting introspect.tangentMode = true.
 
 ## Report_issue Tool
 
@@ -127,6 +153,12 @@ An internal reasoning mechanism that improves the quality of complex tasks by br
 
 This tool has no configuration options.
 
+## Todo_list Tool
+
+Create and manage TODO lists for tracking multi-step tasks. Lists are stored locally in `.amazonq/cli-todo-lists/`.
+
+This tool has no configuration options.
+
 ## Use_aws Tool
 
 Make AWS CLI API calls with the specified service, operation, and parameters.
@@ -137,7 +169,8 @@ Make AWS CLI API calls with the specified service, operation, and parameters.
 {
   "toolsSettings": {
     "use_aws": {
-      "allowedServices": ["s3", "lambda", "ec2"]
+      "allowedServices": ["s3", "lambda", "ec2"],
+      "deniedServices": ["eks", "rds"]
     }
   }
 }
@@ -148,6 +181,7 @@ Make AWS CLI API calls with the specified service, operation, and parameters.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `allowedServices` | array of strings | `[]` | List of AWS services that can be accessed without prompting |
+| `deniedServices` | array of strings | `[]` | List of AWS services to deny. Deny rules are evaluated before allow rules |
 
 ## Using Tool Settings in Agent Configuration
 
@@ -182,7 +216,7 @@ Tools can be explicitly allowed in the `allowedTools` section of the agent confi
 }
 ```
 
-If a tool is not in the `allowedTools` list, the user will be prompted for permission when the tool is used.
+If a tool is not in the `allowedTools` list, the user will be prompted for permission when the tool is used unless an allowed `toolSettings` configuration is set.
 
 Some tools have default permission behaviors:
 - `fs_read` and `report_issue` are trusted by default

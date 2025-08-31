@@ -21,6 +21,7 @@ use crate::telemetry::definitions::metrics::{
     AmazonqStartChat,
     CodewhispererterminalAddChatMessage,
     CodewhispererterminalAgentConfigInit,
+    CodewhispererterminalAgentContribution,
     CodewhispererterminalChatSlashCommandExecuted,
     CodewhispererterminalCliSubcommandExecuted,
     CodewhispererterminalMcpServerInit,
@@ -33,6 +34,7 @@ use crate::telemetry::definitions::types::{
     CodewhispererterminalCustomToolLatency,
     CodewhispererterminalCustomToolOutputTokenSize,
     CodewhispererterminalIsToolValid,
+    CodewhispererterminalMcpServerAllToolsCount,
     CodewhispererterminalMcpServerInitFailureReason,
     CodewhispererterminalToolName,
     CodewhispererterminalToolUseId,
@@ -284,6 +286,25 @@ impl Event {
                 }
                 .into_metric_datum(),
             ),
+            EventType::TangentModeSession {
+                conversation_id,
+                result,
+                args: TangentModeSessionArgs { duration_seconds },
+            } => Some(
+                CodewhispererterminalChatSlashCommandExecuted {
+                    create_time: self.created_time,
+                    value: Some(duration_seconds as f64),
+                    credential_start_url: self.credential_start_url.map(Into::into),
+                    sso_region: self.sso_region.map(Into::into),
+                    amazonq_conversation_id: Some(conversation_id.into()),
+                    codewhispererterminal_chat_slash_command: Some("tangent".to_string().into()),
+                    codewhispererterminal_chat_slash_subcommand: Some("exit".to_string().into()),
+                    result: Some(result.to_string().into()),
+                    reason: None,
+                    codewhispererterminal_in_cloudshell: None,
+                }
+                .into_metric_datum(),
+            ),
             EventType::ToolUseSuggested {
                 conversation_id,
                 utterance_id,
@@ -339,11 +360,35 @@ impl Event {
                 }
                 .into_metric_datum(),
             ),
+            EventType::AgentContribution {
+                conversation_id,
+                utterance_id,
+                tool_use_id,
+                tool_name,
+                lines_by_agent,
+                lines_by_user,
+            } => Some(
+                CodewhispererterminalAgentContribution {
+                    create_time: self.created_time,
+                    credential_start_url: self.credential_start_url.map(Into::into),
+                    value: None,
+                    amazonq_conversation_id: Some(conversation_id.into()),
+                    codewhispererterminal_utterance_id: utterance_id.map(CodewhispererterminalUtteranceId),
+                    codewhispererterminal_tool_use_id: tool_use_id.map(CodewhispererterminalToolUseId),
+                    codewhispererterminal_tool_name: tool_name.map(CodewhispererterminalToolName),
+                    codewhispererterminal_lines_by_agent: lines_by_agent.map(|count| count as i64).map(Into::into),
+                    codewhispererterminal_lines_by_user: lines_by_user.map(|count| count as i64).map(Into::into),
+                }
+                .into_metric_datum(),
+            ),
             EventType::McpServerInit {
                 conversation_id,
                 server_name,
                 init_failure_reason,
                 number_of_tools,
+                all_tool_names,
+                loaded_tool_names,
+                all_tools_count,
             } => Some(
                 CodewhispererterminalMcpServerInit {
                     create_time: self.created_time,
@@ -357,6 +402,11 @@ impl Event {
                         number_of_tools as i64,
                     )),
                     codewhispererterminal_client_application: self.client_application.map(Into::into),
+                    codewhispererterminal_mcp_server_all_tool_names: all_tool_names.map(Into::into),
+                    codewhispererterminal_mcp_server_loaded_tool_names: loaded_tool_names.map(Into::into),
+                    codewhispererterminal_mcp_server_all_tools_count: Some(
+                        CodewhispererterminalMcpServerAllToolsCount(all_tools_count as i64),
+                    ),
                 }
                 .into_metric_datum(),
             ),
@@ -474,6 +524,9 @@ impl From<ChatConversationType> for CodewhispererterminalChatConversationType {
 pub enum MessageMetaTag {
     /// A /compact request
     Compact,
+    GenerateAgent,
+    /// A /tangent request
+    TangentMode,
 }
 
 /// Optional fields to add for a chatAddedMessage telemetry event.
@@ -493,6 +546,13 @@ pub struct ChatAddedMessageParams {
     pub tool_use_id: Option<String>,
     pub assistant_response_length: Option<i32>,
     pub message_meta_tags: Vec<MessageMetaTag>,
+}
+
+/// Optional fields for tangent mode session telemetry event.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
+pub struct TangentModeSessionArgs {
+    /// Duration of tangent mode session in seconds
+    pub duration_seconds: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
@@ -559,6 +619,11 @@ pub enum EventType {
         result: TelemetryResult,
         args: RecordUserTurnCompletionArgs,
     },
+    TangentModeSession {
+        conversation_id: String,
+        result: TelemetryResult,
+        args: TangentModeSessionArgs,
+    },
     ToolUseSuggested {
         conversation_id: String,
         utterance_id: Option<String>,
@@ -580,11 +645,22 @@ pub enum EventType {
         aws_service_name: Option<String>,
         aws_operation_name: Option<String>,
     },
+    AgentContribution {
+        conversation_id: String,
+        utterance_id: Option<String>,
+        tool_use_id: Option<String>,
+        tool_name: Option<String>,
+        lines_by_agent: Option<isize>,
+        lines_by_user: Option<isize>,
+    },
     McpServerInit {
         conversation_id: String,
         server_name: String,
         init_failure_reason: Option<String>,
         number_of_tools: usize,
+        all_tool_names: Option<String>,
+        loaded_tool_names: Option<String>,
+        all_tools_count: usize,
     },
     AgentConfigInit {
         conversation_id: String,

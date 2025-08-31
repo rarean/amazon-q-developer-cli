@@ -146,6 +146,16 @@
       "description": "Name of the MCP server"
     },
     {
+      "name": "codewhispererterminal_mcpServerAllToolNames",
+      "type": "string",
+      "description": "All the tool names available in the MCP server. If there are multiple tools, then the tool names are comma-delimited."
+    },
+    {
+      "name": "codewhispererterminal_mcpServerLoadedToolNames",
+      "type": "string",
+      "description": "All the tool names loaded from MCP server as part of agent definition. If there are multiple tools, then the tool names are comma-delimited."
+    },
+    {
       "name": "codewhispererterminal_mcpServerInitFailureReason",
       "type": "string",
       "description": "Reason for which a mcp server has failed to be initialized"
@@ -153,7 +163,12 @@
     {
       "name": "codewhispererterminal_toolsPerMcpServer",
       "type": "int",
-      "description": "The number of tools provided by a mcp server"
+      "description": "The number of tools loaded into the conversation by the mcp server"
+    },
+    {
+      "name": "codewhispererterminal_mcpServerAllToolsCount",
+      "type": "int",
+      "description": "The number of tools available in the MCP server."
     },
     {
       "name": "codewhispererterminal_isCustomTool",
@@ -263,6 +278,16 @@
       "name": "codewhispererterminal_clientApplication",
       "type": "string",
       "description": "Identifier for the client application or service using the chat-cli"
+    },
+    {
+      "name": "codewhispererterminal_linesByAgent",
+      "type": "int",
+      "description": "The number of lines of code contributed by agent"
+    },
+    {
+      "name": "codewhispererterminal_linesByUser",
+      "type": "int",
+      "description": "The number of lines of code contributed by user"
     }
   ],
   "metrics": [
@@ -418,6 +443,20 @@
       ]
     },
     {
+      "name": "codewhispererterminal_agentContribution",
+      "description": "Emitted after write tool to track agent contribution for the file",
+      "passive": false,
+      "metadata": [
+        { "type": "credentialStartUrl" },
+        { "type": "amazonqConversationId" },
+        { "type": "codewhispererterminal_utteranceId" },
+        { "type": "codewhispererterminal_toolUseId" },
+        { "type": "codewhispererterminal_toolName" },
+        { "type": "codewhispererterminal_linesByAgent" },
+        { "type": "codewhispererterminal_linesByUser" }
+      ]
+    },
+    {
       "name": "codewhispererterminal_mcpServerInit",
       "description": "Emitted once per mcp server on start up",
       "passive": false,
@@ -430,7 +469,10 @@
           "required": false
         },
         { "type": "codewhispererterminal_toolsPerMcpServer" },
-        { "type": "codewhispererterminal_clientApplication" }
+        { "type": "codewhispererterminal_clientApplication" },
+        { "type": "codewhispererterminal_mcpServerAllToolNames" },
+        { "type": "codewhispererterminal_mcpServerLoadedToolNames" },
+        { "type": "codewhispererterminal_mcpServerAllToolsCount" }
       ]
     },
     {
