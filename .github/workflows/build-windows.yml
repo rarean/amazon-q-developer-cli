@@ -1,0 +1,111 @@
+name: Build Windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  build-windows:
+    name: Build Windows Binary and Package
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build Windows binary
+        run: cargo build --release --target x86_64-pc-windows-msvc --bin chat_cli
+
+      - name: Test binary execution
+        run: target\x86_64-pc-windows-msvc\release\chat_cli.exe --version
+
+      - name: Create Windows package
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path "q-windows" -Force
+          Copy-Item "target\x86_64-pc-windows-msvc\release\chat_cli.exe" "q-windows\q.exe"
+          Copy-Item "README.md", "LICENSE.MIT", "LICENSE.APACHE" "q-windows\"
+          
+          @"
+          Amazon Q CLI Windows Installation Instructions
+          
+          1. Extract this ZIP to a folder (e.g., C:\Program Files\Amazon Q CLI)
+          2. Add the folder to your PATH environment variable:
+             - Open System Properties → Advanced → Environment Variables
+             - Edit PATH and add the folder path
+             - Or use PowerShell: `$env:PATH += ";C:\path\to\q"`
+          3. Open a new Command Prompt or PowerShell window
+          4. Run: q --version
+          
+          Note: Windows may show a SmartScreen warning for unsigned software.
+          This is normal for open-source software. Click "More info" then "Run anyway".
+          
+          For more information: https://github.com/aws/amazon-q-developer-cli
+          "@ | Out-File -FilePath "q-windows\INSTALL.txt" -Encoding UTF8
+
+      - name: Create ZIP package
+        shell: powershell
+        run: Compress-Archive -Path "q-windows" -DestinationPath "q-windows-x86_64.zip"
+
+      - name: Generate checksums
+        shell: powershell
+        run: |
+          $binaryHash = Get-FileHash "target\x86_64-pc-windows-msvc\release\chat_cli.exe" -Algorithm SHA256
+          "$($binaryHash.Hash.ToLower())  chat_cli.exe" | Out-File -FilePath "q-windows-binary.sha256" -Encoding ASCII
+          
+          $zipHash = Get-FileHash "q-windows-x86_64.zip" -Algorithm SHA256
+          "$($zipHash.Hash.ToLower())  q-windows-x86_64.zip" | Out-File -FilePath "q-windows-x86_64.zip.sha256" -Encoding ASCII
+
+      - name: Display installation instructions
+        shell: powershell
+        run: |
+          Write-Host "=== Windows Installation Instructions ==="
+          Write-Host ""
+          Write-Host "### Download and Install"
+          Write-Host "1. Download q-windows-x86_64.zip"
+          Write-Host "2. Extract to C:\Program Files\Amazon Q CLI (or preferred location)"
+          Write-Host "3. Add to PATH: System Properties → Advanced → Environment Variables"
+          Write-Host "4. Open new Command Prompt/PowerShell"
+          Write-Host "5. Run: q --version"
+          Write-Host ""
+          Write-Host "### SmartScreen Warning"
+          Write-Host "Windows may show 'Windows protected your PC' dialog."
+          Write-Host "Click 'More info' then 'Run anyway' to proceed."
+          Write-Host ""
+          Write-Host "### Verification"
+          Write-Host "certutil -hashfile q-windows-x86_64.zip SHA256"
+          Write-Host "# Compare with q-windows-x86_64.zip.sha256"
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: amazon-q-cli-windows-x86_64
+          path: |
+            q-windows-x86_64.zip
+            q-windows-binary.sha256
+            q-windows-x86_64.zip.sha256
+          retention-days: 7
