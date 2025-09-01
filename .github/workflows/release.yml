@@ -274,7 +274,7 @@ jobs:
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [check-branch, determine-config, build-macos, build-windows, build-linux]
+    needs: [check-branch, determine-config, build-macos, build-windows]
     if: needs.check-branch.outputs.should_release == 'true'
     permissions:
       contents: write
