@@ -1,0 +1,127 @@
+name: Build Linux
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  build-linux:
+    name: Build Linux Multi-Architecture
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cross-compilation tool
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      - name: Build for target
+        run: cross build --release --target ${{ matrix.target }} --bin chat_cli
+
+      - name: Create tar.gz package
+        run: |
+          mkdir -p "q-linux-${{ matrix.target }}"
+          cp "target/${{ matrix.target }}/release/chat_cli" "q-linux-${{ matrix.target }}/q"
+          chmod +x "q-linux-${{ matrix.target }}/q"
+          cp README.md LICENSE.MIT LICENSE.APACHE "q-linux-${{ matrix.target }}/"
+          
+          cat > "q-linux-${{ matrix.target }}/INSTALL.txt" << 'EOF'
+          Amazon Q CLI Linux Installation Instructions
+          
+          ### Option 1: System Installation (Recommended)
+          1. Extract: tar -xzf q-linux-${{ matrix.target }}.tar.gz
+          2. Install: sudo mv q-linux-${{ matrix.target }}/q /usr/local/bin/
+          3. Test: q --version
+          
+          ### Option 2: User Installation
+          1. Extract: tar -xzf q-linux-${{ matrix.target }}.tar.gz
+          2. Move to user bin: mkdir -p ~/.local/bin && mv q-linux-${{ matrix.target }}/q ~/.local/bin/
+          3. Add to PATH: echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+          4. Reload shell: source ~/.bashrc
+          5. Test: q --version
+          
+          ### Option 3: Portable Installation
+          1. Extract to any directory
+          2. Add to PATH: export PATH="$PATH:/path/to/q-linux-${{ matrix.target }}"
+          3. For persistence, add the export to your shell profile
+          
+          ### Architecture Information
+          Target: ${{ matrix.target }}
+          - GNU targets: Standard Linux distributions
+          - MUSL targets: Static linking, more portable
+          - x86_64: Intel/AMD 64-bit
+          - aarch64: ARM 64-bit (Raspberry Pi 4+, ARM servers)
+          
+          For more information: https://github.com/aws/amazon-q-developer-cli
+          EOF
+          
+          tar -czf "q-linux-${{ matrix.target }}.tar.gz" "q-linux-${{ matrix.target }}"
+
+      - name: Generate checksums
+        run: |
+          sha256sum "target/${{ matrix.target }}/release/chat_cli" > "q-linux-${{ matrix.target }}-binary.sha256"
+          sha256sum "q-linux-${{ matrix.target }}.tar.gz" > "q-linux-${{ matrix.target }}.tar.gz.sha256"
+
+      - name: Display installation instructions
+        run: |
+          echo "=== Linux Installation Instructions (${{ matrix.target }}) ==="
+          echo ""
+          echo "### Download and Install"
+          echo "wget https://github.com/aws/amazon-q-developer-cli/releases/latest/download/q-linux-${{ matrix.target }}.tar.gz"
+          echo "tar -xzf q-linux-${{ matrix.target }}.tar.gz"
+          echo "sudo mv q-linux-${{ matrix.target }}/q /usr/local/bin/"
+          echo "q --version"
+          echo ""
+          echo "### Verification"
+          echo "sha256sum q-linux-${{ matrix.target }}.tar.gz"
+          echo "# Compare with q-linux-${{ matrix.target }}.tar.gz.sha256"
+          echo ""
+          echo "### Architecture: ${{ matrix.target }}"
+          case "${{ matrix.target }}" in
+            *-gnu) echo "- Standard Linux distributions (glibc)" ;;
+            *-musl) echo "- Static linking, maximum portability" ;;
+          esac
+          case "${{ matrix.target }}" in
+            x86_64-*) echo "- Intel/AMD 64-bit processors" ;;
+            aarch64-*) echo "- ARM 64-bit processors (Raspberry Pi 4+, ARM servers)" ;;
+          esac
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: amazon-q-cli-linux-${{ matrix.target }}
+          path: |
+            q-linux-${{ matrix.target }}.tar.gz
+            q-linux-${{ matrix.target }}-binary.sha256
+            q-linux-${{ matrix.target }}.tar.gz.sha256
+          retention-days: 7
