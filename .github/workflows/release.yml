@@ -3,24 +3,74 @@ name: Release
 on:
   push:
     tags:
-      - 'v*-alpha.*'
+      - 'v*-alpha.*'  # Only alpha tags
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Alpha tag to release (e.g., v1.13.2-alpha.1)'
+        description: 'Alpha tag to release (e.g., v1.15.0-alpha.1)'
         required: true
         type: string
 
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
-  Q_CLI_ALPHA: 1  # Enable alpha build mode for releases
 
 jobs:
+  check-branch:
+    name: Check if Alpha Tag is on Develop Branch
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      tag_name: ${{ steps.check.outputs.tag_name }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history to check branches
+
+      - name: Check branch and tag
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG_NAME="${{ github.event.inputs.tag }}"
+          else
+            TAG_NAME="${{ github.ref_name }}"
+          fi
+          
+          # Check if tag exists on develop branch
+          if git branch -r --contains $TAG_NAME | grep -q "origin/develop"; then
+            echo "✅ Tag $TAG_NAME found on develop branch"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Tag $TAG_NAME not found on develop branch"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+  determine-config:
+    name: Determine Build Configuration
+    runs-on: ubuntu-latest
+    needs: check-branch
+    if: needs.check-branch.outputs.should_release == 'true'
+    outputs:
+      is_alpha: ${{ steps.config.outputs.is_alpha }}
+      tag_name: ${{ steps.config.outputs.tag_name }}
+    steps:
+      - name: Set configuration
+        id: config
+        run: |
+          TAG_NAME="${{ needs.check-branch.outputs.tag_name }}"
+          echo "is_alpha=true" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+
   build-macos:
-    name: Build macOS Alpha Release
+    name: Build macOS
     runs-on: macos-latest
-    
+    needs: [check-branch, determine-config]
+    if: needs.check-branch.outputs.should_release == 'true'
+    env:
+      Q_CLI_ALPHA: ${{ needs.determine-config.outputs.is_alpha == 'true' && '1' || '0' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -38,21 +88,13 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-alpha-release-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-alpha-release-
-            ${{ runner.os }}-cargo-release-
-            ${{ runner.os }}-cargo-
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Build Intel binary (Alpha)
+      - name: Build Intel binary
         run: cargo build --release --target x86_64-apple-darwin --bin chat_cli
-        env:
-          Q_CLI_ALPHA: 1
 
-      - name: Build Apple Silicon binary (Alpha)
+      - name: Build Apple Silicon binary
         run: cargo build --release --target aarch64-apple-darwin --bin chat_cli
-        env:
-          Q_CLI_ALPHA: 1
 
       - name: Create universal binary
         run: |
@@ -61,47 +103,181 @@ jobs:
             target/x86_64-apple-darwin/release/chat_cli \
             target/aarch64-apple-darwin/release/chat_cli
 
-      - name: Verify alpha bundle identifier
-        run: |
-          echo "=== Verifying Alpha Release Configuration ==="
-          if grep -q "com.amazon.codewhisperer.alpha" crates/chat-cli/src/Info.plist; then
-            echo "✅ Alpha bundle identifier confirmed: com.amazon.codewhisperer.alpha"
-          else
-            echo "❌ Alpha bundle identifier not found!"
-            cat crates/chat-cli/src/Info.plist
-            exit 1
-          fi
-
-      - name: Create Alpha DMG package
+      - name: Create DMG package
         run: |
           chmod +x scripts/github-actions/create-macos-dmg.sh
           ./scripts/github-actions/create-macos-dmg.sh
-        env:
-          Q_CLI_ALPHA: 1
 
       - name: Generate checksums
         run: |
-          shasum -a 256 target/universal-apple-darwin/release/q > q-alpha-universal-binary.sha256
-          shasum -a 256 Amazon-Q-CLI-Alpha-universal.dmg > Amazon-Q-CLI-Alpha-universal.dmg.sha256
+          if [ "${{ needs.determine-config.outputs.is_alpha }}" = "true" ]; then
+            shasum -a 256 target/universal-apple-darwin/release/q > q-alpha-universal-binary.sha256
+            shasum -a 256 Amazon-Q-CLI-Alpha-universal.dmg > Amazon-Q-CLI-Alpha-universal.dmg.sha256
+          else
+            shasum -a 256 target/universal-apple-darwin/release/q > q-universal-binary.sha256
+            shasum -a 256 Amazon-Q-CLI-universal.dmg > Amazon-Q-CLI-universal.dmg.sha256
+          fi
 
-      - name: Upload release artifacts
+      - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos-alpha-release-artifacts
+          name: macos-release-artifacts
           path: |
             target/universal-apple-darwin/release/q
-            Amazon-Q-CLI-Alpha-universal.dmg
-            q-alpha-universal-binary.sha256
-            Amazon-Q-CLI-Alpha-universal.dmg.sha256
-          retention-days: 30
+            *.dmg
+            *.sha256
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    needs: [check-branch, determine-config]
+    if: needs.check-branch.outputs.should_release == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build Windows binary
+        run: cargo build --release --target x86_64-pc-windows-msvc --bin chat_cli
+
+      - name: Create Windows package
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path "q-windows" -Force
+          Copy-Item "target\x86_64-pc-windows-msvc\release\chat_cli.exe" "q-windows\q.exe"
+          Copy-Item "README.md", "LICENSE.MIT", "LICENSE.APACHE" "q-windows\"
+          
+          @"
+          Amazon Q CLI Windows Installation Instructions
+          
+          1. Extract this ZIP to a folder (e.g., C:\Program Files\Amazon Q CLI)
+          2. Add the folder to your PATH environment variable
+          3. Open a new Command Prompt or PowerShell window
+          4. Run: q --version
+          
+          Note: Windows may show a SmartScreen warning for unsigned software.
+          Click "More info" then "Run anyway" to proceed.
+          
+          For more information: https://github.com/aws/amazon-q-developer-cli
+          "@ | Out-File -FilePath "q-windows\INSTALL.txt" -Encoding UTF8
+          
+          Compress-Archive -Path "q-windows" -DestinationPath "q-windows-x86_64.zip"
+
+      - name: Generate checksums
+        shell: powershell
+        run: |
+          $binaryHash = Get-FileHash "target\x86_64-pc-windows-msvc\release\chat_cli.exe" -Algorithm SHA256
+          "$($binaryHash.Hash.ToLower())  chat_cli.exe" | Out-File -FilePath "q-windows-binary.sha256" -Encoding ASCII
+          
+          $zipHash = Get-FileHash "q-windows-x86_64.zip" -Algorithm SHA256
+          "$($zipHash.Hash.ToLower())  q-windows-x86_64.zip" | Out-File -FilePath "q-windows-x86_64.zip.sha256" -Encoding ASCII
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-artifacts
+          path: |
+            q-windows-x86_64.zip
+            q-windows-binary.sha256
+            q-windows-x86_64.zip.sha256
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    needs: [check-branch, determine-config]
+    if: needs.check-branch.outputs.should_release == 'true'
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cross-compilation tool
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build for target
+        run: cross build --release --target ${{ matrix.target }} --bin chat_cli
+
+      - name: Create tar.gz package
+        run: |
+          mkdir -p "q-linux-${{ matrix.target }}"
+          cp "target/${{ matrix.target }}/release/chat_cli" "q-linux-${{ matrix.target }}/q"
+          chmod +x "q-linux-${{ matrix.target }}/q"
+          cp README.md LICENSE.MIT LICENSE.APACHE "q-linux-${{ matrix.target }}/"
+          
+          cat > "q-linux-${{ matrix.target }}/INSTALL.txt" << 'EOF'
+          Amazon Q CLI Linux Installation Instructions
+          
+          ### System Installation (Recommended)
+          1. Extract: tar -xzf q-linux-${{ matrix.target }}.tar.gz
+          2. Install: sudo mv q-linux-${{ matrix.target }}/q /usr/local/bin/
+          3. Test: q --version
+          
+          ### User Installation
+          1. Extract: tar -xzf q-linux-${{ matrix.target }}.tar.gz
+          2. Move to user bin: mkdir -p ~/.local/bin && mv q-linux-${{ matrix.target }}/q ~/.local/bin/
+          3. Add to PATH: echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+          4. Reload shell: source ~/.bashrc
+          5. Test: q --version
+          
+          For more information: https://github.com/aws/amazon-q-developer-cli
+          EOF
+          
+          tar -czf "q-linux-${{ matrix.target }}.tar.gz" "q-linux-${{ matrix.target }}"
+
+      - name: Generate checksums
+        run: |
+          sha256sum "target/${{ matrix.target }}/release/chat_cli" > "q-linux-${{ matrix.target }}-binary.sha256"
+          sha256sum "q-linux-${{ matrix.target }}.tar.gz" > "q-linux-${{ matrix.target }}.tar.gz.sha256"
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.target }}-artifacts
+          path: |
+            q-linux-${{ matrix.target }}.tar.gz
+            q-linux-${{ matrix.target }}-binary.sha256
+            q-linux-${{ matrix.target }}.tar.gz.sha256
 
   create-release:
-    name: Create GitHub Alpha Release
+    name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [build-macos]
+    needs: [check-branch, determine-config, build-macos, build-windows, build-linux]
+    if: needs.check-branch.outputs.should_release == 'true'
     permissions:
       contents: write
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -114,132 +290,114 @@ jobs:
       - name: Generate release notes
         id: release_notes
         run: |
-          TAG_NAME="${{ github.ref_name }}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG_NAME="${{ github.event.inputs.tag }}"
+          TAG_NAME="${{ needs.determine-config.outputs.tag_name }}"
+          IS_ALPHA="${{ needs.determine-config.outputs.is_alpha }}"
+          
+          if [ "$IS_ALPHA" = "true" ]; then
+            RELEASE_TYPE="Alpha Pre-release"
+            STABILITY_WARNING="⚠️ **This is an alpha pre-release** for testing purposes only."
+          else
+            RELEASE_TYPE="Stable Release"
+            STABILITY_WARNING="✅ **This is a stable release** ready for production use."
           fi
           
           cat > release_notes.md << EOF
-          # Amazon Q CLI ${TAG_NAME} (Alpha Pre-release)
+          # Amazon Q CLI ${TAG_NAME} (${RELEASE_TYPE})
           
-          ⚠️ **This is an alpha pre-release** built with the new GitHub Actions pipeline. Use for testing only.
+          ${STABILITY_WARNING}
           
-          ## Alpha Version Characteristics
+          ## Cross-Platform Support
           
-          This alpha version is designed to run **in parallel** with the stable version:
-          - **Binary Name**: \`q-alpha\`
-          - **Bundle ID**: \`com.amazon.codewhisperer.alpha\`
-          - **Data Directory**: \`~/Library/Application Support/amazon-q-alpha/\`
-          - **Log Directory**: \`\$TMPDIR/qlog-alpha\`
-          - **DMG Name**: \`Amazon-Q-CLI-Alpha-universal.dmg\`
-          - **Complete isolation** from stable version
-          
-          ## Installation Instructions
+          This release provides native packages for all major platforms:
           
           ### macOS
+          - **Universal Binary**: Works on both Intel and Apple Silicon Macs
+          - **Package**: \`Amazon-Q-CLI-universal.dmg\` (drag-and-drop installation)
+          - **Installation**: Double-click DMG, drag to Applications, right-click → Open (first time)
           
-          **Option 1: Alpha DMG (Recommended)**
-          1. Download \`Amazon-Q-CLI-Alpha-universal.dmg\`
-          2. Double-click to mount the disk image
-          3. Drag 'q-alpha' to Applications folder
-          4. Right-click 'q-alpha' in Applications → "Open" (first time only)
-          5. Click "Open" when prompted about unidentified developer
+          ### Windows
+          - **Architecture**: x86_64 (64-bit Intel/AMD)
+          - **Package**: \`q-windows-x86_64.zip\`
+          - **Installation**: Extract ZIP, add to PATH, handle SmartScreen warning
           
-          **Option 2: Direct Alpha Binary**
-          1. Download \`q-alpha\` (alpha universal binary)
-          2. Move to /usr/local/bin: \`sudo mv q-alpha /usr/local/bin/q-alpha\`
-          3. Make executable: \`sudo chmod +x /usr/local/bin/q-alpha\`
-          4. Remove quarantine: \`sudo xattr -d com.apple.quarantine /usr/local/bin/q-alpha\`
+          ### Linux
+          - **x86_64-unknown-linux-gnu**: Standard Intel/AMD 64-bit (glibc)
+          - **aarch64-unknown-linux-gnu**: ARM 64-bit (glibc) - Raspberry Pi 4+, ARM servers
+          - **x86_64-unknown-linux-musl**: Portable Intel/AMD 64-bit (static linking)
+          - **aarch64-unknown-linux-musl**: Portable ARM 64-bit (static linking)
+          - **Installation**: Extract tar.gz, move to /usr/local/bin or ~/.local/bin
           
-          ## Verification
+          ## Security & Verification
           
-          All alpha packages include SHA256 checksums for verification:
-          
-          \`\`\`bash
-          # Alpha DMG
-          shasum -a 256 Amazon-Q-CLI-Alpha-universal.dmg
-          # Compare with Amazon-Q-CLI-Alpha-universal.dmg.sha256
-          
-          # Alpha Binary
-          shasum -a 256 q
-          # Compare with q-alpha-universal-binary.sha256
-          \`\`\`
-          
-          ## Parallel Installation Testing
-          
-          You can safely install this alpha version alongside the stable version:
+          All packages include SHA256 checksums for verification:
           
           \`\`\`bash
-          # Test alpha version
-          q-alpha --version
+          # macOS
+          shasum -a 256 Amazon-Q-CLI-universal.dmg
           
-          # Verify data isolation
-          ls ~/Library/Application\ Support/amazon-q*/
-          # Should show both amazon-q/ and amazon-q-alpha/ directories
+          # Windows
+          certutil -hashfile q-windows-x86_64.zip SHA256
           
-          # Test both versions side by side
-          q --version        # stable version
-          q-alpha --version  # alpha version
+          # Linux
+          sha256sum q-linux-{target}.tar.gz
           \`\`\`
+          
+          ## Installation Quick Start
+          
+          ### macOS
+          1. Download \`Amazon-Q-CLI-universal.dmg\`
+          2. Double-click to mount, drag to Applications
+          3. Right-click → Open (bypass Gatekeeper)
+          4. Run: \`q --version\`
+          
+          ### Windows
+          1. Download \`q-windows-x86_64.zip\`
+          2. Extract to preferred location
+          3. Add directory to PATH
+          4. Handle SmartScreen warning (More info → Run anyway)
+          5. Run: \`q --version\`
+          
+          ### Linux
+          1. Choose your architecture package
+          2. \`tar -xzf q-linux-{target}.tar.gz\`
+          3. \`sudo mv q-linux-{target}/q /usr/local/bin/\`
+          4. Run: \`q --version\`
+          
+          ## Architecture Selection Guide (Linux)
+          
+          - **x86_64-unknown-linux-gnu**: Most common - standard Linux distributions
+          - **aarch64-unknown-linux-gnu**: ARM 64-bit systems (Raspberry Pi 4+, ARM servers)
+          - **x86_64-unknown-linux-musl**: Maximum portability, works everywhere
+          - **aarch64-unknown-linux-musl**: ARM 64-bit with maximum portability
           
           ## Security Notice
           
-          These packages are **unsigned** but safe to use. This is normal for open-source software.
-          
+          These packages are **unsigned** but safe to use:
           - ✅ **Verify checksums** before installation
-          - ✅ **Download only** from official GitHub releases  
+          - ✅ **Download only** from official GitHub releases
           - ✅ **Review build logs** in GitHub Actions for transparency
           - ✅ **Source code** is fully open and auditable
-          - ✅ **Alpha isolation** prevents conflicts with stable version
           
-          ## Alpha Release Notes
+          ## Support
           
-          This alpha release demonstrates:
-          - ✅ Unsigned macOS packages (Alpha DMG + universal binary)
-          - ✅ SHA256 checksum verification
-          - ✅ GitHub Actions automated builds
-          - ✅ Universal binary support (Intel + Apple Silicon)
-          - ✅ Professional Alpha DMG packaging
-          - ✅ **Parallel installation support** with stable version
-          - ✅ **Complete data isolation** (separate directories)
-          - ✅ **Different bundle identifier** for macOS recognition
-          
-          **Testing Focus:**
-          - Alpha installation process on different macOS versions
-          - Parallel installation with stable version
-          - Data directory isolation verification
-          - Bundle identifier separation
-          - Gatekeeper bypass workflow
-          - Binary functionality across architectures
-          - Alpha DMG mounting and drag-drop installation
-          
-          **Known Limitations:**
-          - Only macOS packages available (Windows/Linux coming later)
-          - Alpha quality - use for testing purposes only
-          - Requires manual setup for separate command names (q-alpha)
-          
-          ## Feedback
-          
-          Please report any issues with this alpha release:
           - [GitHub Issues](https://github.com/aws/amazon-q-developer-cli/issues)
-          - Tag issues with \`alpha-testing\` label
-          - Include alpha version info: \`q-alpha --version\` output
-          - Mention if testing parallel installation
+          - [Documentation](https://github.com/aws/amazon-q-developer-cli)
+          - Include \`q --version\` output when reporting issues
           
           EOF
 
-      - name: Create Alpha Release
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref_name }}${{ github.event.inputs.tag }}
-          name: Amazon Q CLI ${{ github.ref_name }}${{ github.event.inputs.tag }} (Alpha)
+          tag_name: ${{ needs.determine-config.outputs.tag_name }}
+          name: Amazon Q CLI ${{ needs.determine-config.outputs.tag_name }}
           body_path: release_notes.md
           draft: false
-          prerelease: true
+          prerelease: ${{ needs.determine-config.outputs.is_alpha == 'true' }}
           files: |
-            q
-            Amazon-Q-CLI-Alpha-universal.dmg
-            q-alpha-universal-binary.sha256
-            Amazon-Q-CLI-Alpha-universal.dmg.sha256
+            *.dmg
+            *.zip
+            *.tar.gz
+            *.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
