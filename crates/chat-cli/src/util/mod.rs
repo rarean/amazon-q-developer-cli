@@ -7,6 +7,7 @@ pub mod consts;
 pub mod directories;
 pub mod knowledge_store;
 pub mod open;
+pub mod pattern_matching;
 pub mod process;
 pub mod spinner;
 pub mod system_info;
@@ -14,8 +15,10 @@ pub mod system_info;
 pub mod test;
 
 use std::fmt::Display;
+use std::io;
 use std::io::{
     ErrorKind,
+    Write,
     stdout,
 };
 
@@ -100,5 +103,20 @@ pub fn dialoguer_theme() -> ColorfulTheme {
     ColorfulTheme {
         prompt_prefix: dialoguer::console::style("?".into()).for_stderr().magenta(),
         ..ColorfulTheme::default()
+    }
+}
+
+/// A writer that discards all data written to it.
+pub struct NullWriter;
+
+impl Write for NullWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        // Report that all bytes were successfully "written" (i.e., discarded).
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        // Flushing a null writer does nothing.
+        Ok(())
     }
 }
