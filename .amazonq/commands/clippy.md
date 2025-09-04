@@ -6,11 +6,11 @@ Run clippy tests used in CI pipeline
 
 Run the following clippy, tests, format, and fix related errors
 
-1. Step 5: `cargo +nightly fmt --check -- --color always`
-2. Step 1: `cargo clippy --locked --workspace --color always -- -D warnings`
-3. Step 2: `cargo clippy --locked -p chat_cli --color always -- -D warnings`
-4. Step 3: `cargo test --locked -p chat_cli`
-5. Step 4: `cargo test --locked --workspace --lib --bins --test '*' --exclude fig_desktop-fuzz`
+1. Step 1: `cargo +nightly fmt --check -- --color always`
+2. Step 2: `cargo clippy --locked --workspace --color always -- -D warnings`
+3. Step 3: `cargo clippy --locked -p chat_cli --color always -- -D warnings`
+4. Step 4: `cargo test --locked -p chat_cli`
+5. Step 5: `cargo test --locked --workspace --lib --bins --test '*' --exclude fig_desktop-fuzz`
 
 ## Context
 

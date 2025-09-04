@@ -3,13 +3,13 @@ use clap::{
     Subcommand,
 };
 use eyre::Result;
-use themes::{
-    ThemeManager,
-    ThemeRenderer,
-};
 
+use crate::cli::chat::themes::renderer::ThemeRenderer;
+use crate::cli::chat::themes::{
+    GitInfo,
+    ThemeManager,
+};
 use crate::os::Os;
-use crate::util::directories::chat_themes_dir;
 
 #[derive(Debug, Parser, PartialEq)]
 pub struct ThemeArgs {
@@ -46,12 +46,11 @@ pub enum ThemeSubcommand {
 
 impl ThemeArgs {
     pub async fn execute(self, os: &mut Os) -> Result<()> {
-        let themes_dir = chat_themes_dir(os)?;
-        let manager = ThemeManager::new(themes_dir);
+        let mut manager = ThemeManager::new(os)?;
 
         match self.command {
             ThemeSubcommand::List => {
-                let themes = manager.list_themes();
+                let themes = manager.list_available_themes(os).await?;
                 println!("Available themes:");
                 for theme in themes {
                     println!("  {}", theme);
@@ -68,20 +67,35 @@ impl ThemeArgs {
                     },
                 }
             },
-            ThemeSubcommand::Validate { name } => match manager.validate_theme(&name) {
-                Ok(_) => {
-                    println!("Theme '{}' is valid", name);
-                },
-                Err(e) => {
-                    eprintln!("Theme '{}' is invalid: {}", name, e);
-                },
+            ThemeSubcommand::Validate { name } => {
+                match manager.load_theme(&name) {
+                    Ok(_) => {
+                        if let Some(theme) = manager.get_active_theme() {
+                            // Try to render a test prompt to validate
+                            let renderer = ThemeRenderer::new(theme);
+                            let git_info = detect_git_info();
+                            let _rendered = renderer.render_prompt(Some("test"), false, false, Some(&git_info));
+                            println!("Theme '{}' is valid", name);
+                        } else {
+                            eprintln!("Theme '{}' failed to load", name);
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("Theme '{}' is invalid: {}", name, e);
+                    },
+                }
             },
             ThemeSubcommand::Preview { name } => match manager.load_theme(&name) {
-                Ok(template) => {
-                    let renderer = ThemeRenderer::new();
-                    let rendered = renderer.render_prompt(&template);
-                    println!("Preview of theme '{}':", name);
-                    print!("{}", rendered);
+                Ok(_) => {
+                    if let Some(theme) = manager.get_active_theme() {
+                        let renderer = ThemeRenderer::new(theme);
+                        let git_info = detect_git_info();
+                        let rendered = renderer.render_prompt(Some("q_cli_default"), false, false, Some(&git_info));
+                        println!("Preview of theme '{}':", name);
+                        print!("{}", rendered);
+                    } else {
+                        eprintln!("Failed to load theme '{}'", name);
+                    }
                 },
                 Err(e) => {
                     eprintln!("Error previewing theme: {}", e);
@@ -97,12 +111,51 @@ impl ThemeArgs {
                     env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf())
                 };
 
-                let rendered = manager.render_context_prompt(&target_path);
-                println!("Context-aware prompt for {:?}:", target_path);
-                print!("{}", rendered);
+                // Try to load default theme for context rendering
+                let _ = manager.load_default_theme();
+                if let Some(theme) = manager.get_active_theme() {
+                    let renderer = ThemeRenderer::new(theme);
+                    let git_info = detect_git_info_for_path(&target_path);
+                    let rendered = renderer.render_prompt(Some("q_cli_default"), false, false, Some(&git_info));
+                    println!("Context-aware prompt for {:?}:", target_path);
+                    print!("{}", rendered);
+                } else {
+                    println!("Context-aware prompt for {:?}:", target_path);
+                    print!("> ");
+                }
             },
         }
 
         Ok(())
+    }
+}
+
+/// Detect git information for the current directory
+fn detect_git_info() -> GitInfo {
+    use std::env;
+
+    let current_dir = env::current_dir().unwrap_or_else(|_| std::path::Path::new(".").to_path_buf());
+
+    // Use our themes crate git detection
+    let themes_git_info = themes::GitInfo::detect(&current_dir);
+
+    // Convert to the chat themes GitInfo format
+    GitInfo {
+        branch: themes_git_info.branch,
+        is_dirty: themes_git_info.status.is_some_and(|s| !s.clean),
+        is_repo: themes_git_info.is_repo,
+    }
+}
+
+/// Detect git information for a specific path
+fn detect_git_info_for_path(path: &std::path::Path) -> GitInfo {
+    // Use our themes crate git detection
+    let themes_git_info = themes::GitInfo::detect(path);
+
+    // Convert to the chat themes GitInfo format
+    GitInfo {
+        branch: themes_git_info.branch,
+        is_dirty: themes_git_info.status.is_some_and(|s| !s.clean),
+        is_repo: themes_git_info.is_repo,
     }
 }

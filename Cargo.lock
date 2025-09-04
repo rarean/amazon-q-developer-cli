@@ -6266,6 +6266,7 @@ dependencies = [
  "lazy_static",
  "regex",
  "serde",
+ "tempfile",
 ]
 
 [[package]]

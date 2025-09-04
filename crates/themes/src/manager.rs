@@ -105,3 +105,97 @@ impl ThemeManager {
         renderer.render_prompt(&template)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tempfile::TempDir;
+
+    use super::*;
+
+    #[test]
+    fn test_load_theme_non_existent() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = ThemeManager::new(temp_dir.path().to_path_buf());
+
+        let result = manager.load_theme("non_existent");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Theme 'non_existent' not found"));
+    }
+
+    #[test]
+    fn test_load_theme_builtin() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = ThemeManager::new(temp_dir.path().to_path_buf());
+
+        let result = manager.load_theme("minimal");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "> ");
+    }
+
+    #[test]
+    fn test_validate_theme_non_existent() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = ThemeManager::new(temp_dir.path().to_path_buf());
+
+        let result = manager.validate_theme("non_existent");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Theme 'non_existent' not found"));
+    }
+
+    #[test]
+    fn test_install_theme_invalid_template() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = ThemeManager::new(temp_dir.path().to_path_buf());
+
+        let result = manager.install_theme("test", "${INVALID_VAR}");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown variable: INVALID_VAR"));
+    }
+
+    #[test]
+    fn test_install_theme_unbalanced_braces() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = ThemeManager::new(temp_dir.path().to_path_buf());
+
+        let result = manager.install_theme("test", "${RED");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unbalanced braces"));
+    }
+
+    #[test]
+    fn test_install_theme_success() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = ThemeManager::new(temp_dir.path().to_path_buf());
+
+        let result = manager.install_theme("test", "${RED}> ${RESET}");
+        assert!(result.is_ok());
+
+        let loaded = manager.load_theme("test");
+        assert!(loaded.is_ok());
+        assert_eq!(loaded.unwrap(), "${RED}> ${RESET}");
+    }
+
+    #[test]
+    fn test_list_themes_builtin_only() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = ThemeManager::new(temp_dir.path().to_path_buf());
+
+        let themes = manager.list_themes();
+        assert!(themes.contains(&"minimal (builtin)".to_string()));
+        assert!(themes.contains(&"powerline (builtin)".to_string()));
+        assert!(themes.contains(&"git-enabled (builtin)".to_string()));
+    }
+
+    #[test]
+    fn test_list_themes_with_user_themes() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = ThemeManager::new(temp_dir.path().to_path_buf());
+
+        // Install a user theme
+        manager.install_theme("custom", "${BLUE}> ${RESET}").unwrap();
+
+        let themes = manager.list_themes();
+        assert!(themes.contains(&"custom".to_string()));
+        assert!(themes.contains(&"minimal (builtin)".to_string()));
+    }
+}
