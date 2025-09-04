@@ -21,6 +21,7 @@ coverage/
 .turbo
 .amazonq/*
 !.amazonq/commands/
+.ai/
 
 # Python
 __pycache__

@@ -20,6 +20,47 @@ use crate::cli::chat::{
 use crate::cli::experiment::experiment_manager::ExperimentManager;
 use crate::os::Os;
 
+/// Represents an experimental feature that can be toggled
+#[derive(Debug, Clone)]
+struct Experiment {
+    name: &'static str,
+    description: &'static str,
+    setting_key: Setting,
+}
+
+static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
+    Experiment {
+        name: "Knowledge",
+        description: "Enables persistent context storage and retrieval across chat sessions (/knowledge)",
+        setting_key: Setting::EnabledKnowledge,
+    },
+    Experiment {
+        name: "Thinking",
+        description: "Enables complex reasoning with step-by-step thought processes",
+        setting_key: Setting::EnabledThinking,
+    },
+    Experiment {
+        name: "Tangent Mode",
+        description: "Enables entering into a temporary mode for sending isolated conversations (/tangent)",
+        setting_key: Setting::EnabledTangentMode,
+    },
+    Experiment {
+        name: "Todo Lists",
+        description: "Enables Q to create todo lists that can be viewed and managed using /todos",
+        setting_key: Setting::EnabledTodoList,
+    },
+    Experiment {
+        name: "Custom Commands",
+        description: "Enables user-defined custom commands (/commands, /project:name, /user:name)",
+        setting_key: Setting::EnabledCommands,
+    },
+    Experiment {
+        name: "Themes",
+        description: "Enables dynamic theme switching within chat sessions (/themes)",
+        setting_key: Setting::EnabledThemes,
+    },
+];
+
 #[derive(Debug, PartialEq, Args)]
 pub struct ExperimentArgs;
 impl ExperimentArgs {

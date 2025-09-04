@@ -84,6 +84,10 @@ pub enum Setting {
     EnabledTodoList,
     #[strum(message = "Enable the checkpoint feature (boolean)")]
     EnabledCheckpoint,
+    #[strum(message = "Enable themes functionality (boolean)")]
+    EnabledThemes,
+    #[strum(message = "Current active theme name (string)")]
+    CurrentTheme,
 }
 
 impl AsRef<str> for Setting {
@@ -123,6 +127,8 @@ impl AsRef<str> for Setting {
             Self::EnabledTodoList => "chat.enableTodoList",
             Self::EnabledCheckpoint => "chat.enableCheckpoint",
             Self::EnabledContextUsageIndicator => "chat.enableContextUsageIndicator",
+            Self::EnabledThemes => "chat.enableThemes",
+            Self::CurrentTheme => "chat.currentTheme",
         }
     }
 }
