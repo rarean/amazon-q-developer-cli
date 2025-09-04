@@ -3,7 +3,6 @@ use std::fs;
 use std::path::Path;
 
 use eyre::Result;
-use regex::Regex;
 
 use super::BashTheme;
 
@@ -55,29 +54,86 @@ impl BashParser {
     pub fn substitute_variables(template: &str, vars: &HashMap<String, String>) -> String {
         let mut result = template.to_string();
 
-        // Handle bash-style conditionals: ${VAR:+text}
-        let conditional_regex = Regex::new(r"\$\{([^}:]+):?\+([^}]*)\}").unwrap();
-        result = conditional_regex
-            .replace_all(&result, |caps: &regex::Captures<'_>| {
-                let var_name = &caps[1];
-                let conditional_text = &caps[2];
-
-                // Check if the variable exists and is non-empty
-                if let Some(var_value) = vars.get(var_name) {
-                    if !var_value.is_empty() {
-                        // Substitute variables in the conditional text
-                        Self::substitute_simple_variables(conditional_text, vars)
-                    } else {
-                        String::new()
-                    }
-                } else {
-                    String::new()
-                }
-            })
-            .to_string();
+        // Handle bash-style conditionals: ${VAR:+text} with proper brace matching
+        result = Self::substitute_conditionals(&result, vars);
 
         // Simple variable substitution: $VAR or ${VAR}
         result = Self::substitute_simple_variables(&result, vars);
+
+        result
+    }
+
+    /// Handle conditional substitutions with proper brace matching
+    fn substitute_conditionals(template: &str, vars: &HashMap<String, String>) -> String {
+        let mut result = String::new();
+        let mut chars = template.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if ch == '$' && chars.peek() == Some(&'{') {
+                chars.next(); // consume '{'
+
+                // Find the variable name (up to ':' or '}')
+                let mut var_name = String::new();
+                let mut found_colon = false;
+
+                while let Some(&next_ch) = chars.peek() {
+                    if next_ch == ':' {
+                        chars.next(); // consume ':'
+                        found_colon = true;
+                        break;
+                    } else if next_ch == '}' {
+                        break;
+                    } else {
+                        var_name.push(chars.next().unwrap());
+                    }
+                }
+
+                if found_colon && chars.peek() == Some(&'+') {
+                    chars.next(); // consume '+'
+
+                    // Find the conditional text with proper brace matching
+                    let mut conditional_text = String::new();
+                    let mut brace_count = 1; // We're inside the outer braces
+
+                    for next_ch in chars.by_ref() {
+                        if next_ch == '{' {
+                            brace_count += 1;
+                            conditional_text.push(next_ch);
+                        } else if next_ch == '}' {
+                            brace_count -= 1;
+                            if brace_count == 0 {
+                                // Found the matching closing brace
+                                break;
+                            } else {
+                                conditional_text.push(next_ch);
+                            }
+                        } else {
+                            conditional_text.push(next_ch);
+                        }
+                    }
+
+                    // Check if the variable exists and is non-empty
+                    if let Some(var_value) = vars.get(&var_name) {
+                        if !var_value.is_empty() {
+                            // Substitute variables in the conditional text
+                            result.push_str(&Self::substitute_simple_variables(&conditional_text, vars));
+                        }
+                        // If empty or doesn't exist, add nothing
+                    }
+                } else {
+                    // Not a conditional, put back what we consumed
+                    result.push('$');
+                    result.push('{');
+                    result.push_str(&var_name);
+                    if found_colon {
+                        result.push(':');
+                    }
+                    // Continue processing normally
+                }
+            } else {
+                result.push(ch);
+            }
+        }
 
         result
     }
@@ -405,5 +461,117 @@ PROMPT="$Q_AGENT_COLOR[$Q_AGENT]$RESET_COLOR > ""#;
 
         println!("Rendered prompt: {:?}", rendered);
         println!("Rendered prompt (display): {}", rendered);
+    }
+
+    #[test]
+    fn test_git_enabled_theme_nested_braces() {
+        // Test the simplified git-enabled theme template
+        let template = "${GREEN}➜${RESET} ${GIT_BRANCH:+${BLUE}git:(${GIT_BRANCH})${RESET} }> ";
+
+        let mut vars = HashMap::new();
+        vars.insert("GREEN".to_string(), "\x1b[32m".to_string());
+        vars.insert("RESET".to_string(), "\x1b[0m".to_string());
+        vars.insert("BLUE".to_string(), "\x1b[34m".to_string());
+        vars.insert("GIT_BRANCH".to_string(), "develop".to_string());
+
+        let result = BashParser::substitute_variables(template, &vars);
+
+        // Should contain the git branch with proper formatting
+        assert!(
+            result.contains("git:(develop)"),
+            "Result should contain 'git:(develop)', got: {}",
+            result
+        );
+        assert!(
+            !result.contains("${"),
+            "Result should not contain unsubstituted variables: {}",
+            result
+        );
+        assert!(
+            !result.contains("} } } } } } }>"),
+            "Result should not contain malformed braces: {}",
+            result
+        );
+        assert!(result.ends_with("> "), "Result should end with '> '");
+
+        println!("Git-enabled theme result: {}", result);
+    }
+
+    #[test]
+    fn test_powerline_theme_format() {
+        // Test the powerline theme template
+        let template = "agent:[${AGENT}] usage:(${USAGE}%) ${GIT_BRANCH:+git:(${GIT_BRANCH})}> ";
+
+        let mut vars = HashMap::new();
+        vars.insert("AGENT".to_string(), "default".to_string());
+        vars.insert("USAGE".to_string(), "48.35".to_string());
+        vars.insert("GIT_BRANCH".to_string(), "develop".to_string());
+
+        let result = BashParser::substitute_variables(template, &vars);
+
+        // Should match the expected format
+        assert_eq!(result, "agent:[default] usage:(48.35%) git:(develop)> ");
+
+        println!("Powerline theme result: {}", result);
+    }
+
+    #[test]
+    fn test_parse_theme_file_error_handling() {
+        use std::path::Path;
+
+        // Test with non-existent file (line 13-14)
+        let result = BashParser::parse_theme_file(Path::new("/nonexistent/file.theme"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_assignment_edge_cases() {
+        // Test line without equals sign (line 246)
+        assert_eq!(BashParser::parse_assignment("invalid_line"), None);
+
+        // Test empty key (line 254-256)
+        assert_eq!(
+            BashParser::parse_assignment("=value"),
+            Some(("".to_string(), "value".to_string()))
+        );
+
+        // Test quoted value with no closing quote (line 259-260)
+        assert_eq!(
+            BashParser::parse_assignment("KEY=\"unclosed"),
+            Some(("KEY".to_string(), "\"unclosed".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_substitute_conditionals_edge_cases() {
+        let vars = HashMap::new();
+
+        // Test malformed conditional without closing brace (line 129)
+        let template = "${VAR:+unclosed";
+        let result = BashParser::substitute_conditionals(template, &vars);
+        // The function should return empty string when it can't find closing brace
+        assert_eq!(result, "");
+
+        // Test conditional with empty variable (line 166-176)
+        let mut vars = HashMap::new();
+        vars.insert("EMPTY".to_string(), "".to_string());
+        let template = "${EMPTY:+should_not_show}";
+        let result = BashParser::substitute_conditionals(template, &vars);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_process_escape_sequences_error_cases() {
+        // Test invalid octal sequence (line 271-273)
+        assert_eq!(BashParser::process_escape_sequences("\\099"), "\\099");
+
+        // Test incomplete octal sequence (line 279-281)
+        assert_eq!(BashParser::process_escape_sequences("\\0"), "\\0");
+
+        // Test backslash at end of string (line 283-285)
+        assert_eq!(BashParser::process_escape_sequences("test\\"), "test\\");
+
+        // Test unknown escape sequence (line 287-288)
+        assert_eq!(BashParser::process_escape_sequences("\\x"), "\\x");
     }
 }

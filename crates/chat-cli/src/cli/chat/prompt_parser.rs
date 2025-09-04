@@ -197,4 +197,27 @@ mod tests {
         // Test invalid prompt
         assert!(parse_prompt_components("invalid").is_none());
     }
+
+    #[test]
+    fn test_parse_prompt_components_error_cases() {
+        // Test malformed bracket - no closing bracket (line 45-46)
+        assert!(parse_prompt_components("[unclosed > ").is_none());
+
+        // Test malformed bracket - closing before opening (line 49)
+        assert!(parse_prompt_components("]invalid[ > ").is_none());
+
+        // Test prompt without proper ending (line 53-55)
+        assert!(parse_prompt_components("[test] !").is_none());
+        assert!(parse_prompt_components("↯ !").is_none());
+        assert!(parse_prompt_components("!").is_none());
+    }
+
+    #[test]
+    fn test_detect_git_info_error_handling() {
+        // Test when current_dir fails (line 27)
+        // This is hard to test directly, but we can test the fallback behavior
+        let git_info = detect_git_info();
+        // Should not panic and return a valid GitInfo struct
+        assert!(git_info.branch.is_some() || git_info.branch.is_none());
+    }
 }

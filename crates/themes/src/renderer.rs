@@ -71,6 +71,8 @@ impl ThemeRenderer {
             "GIT_UNTRACKED",
             "GIT_AHEAD",
             "GIT_BEHIND",
+            "AGENT",
+            "USAGE",
         ];
 
         let re = regex::Regex::new(r"\$\{([^}:]+)").unwrap();
@@ -93,6 +95,9 @@ impl ThemeRenderer {
         // Replace git variables
         result = self.replace_git_variables(&result);
 
+        // Replace agent and usage variables
+        result = self.replace_agent_variables(&result);
+
         // Replace color variables
         result = self.replace_color_variables(&result);
 
@@ -100,30 +105,86 @@ impl ThemeRenderer {
     }
 
     fn process_conditional_formatting(&self, template: &str) -> String {
-        let mut result = template.to_string();
+        let mut result = String::new();
+        let mut chars = template.chars().peekable();
 
-        // Handle ${VAR:+text} syntax - show text if VAR is non-empty
-        let re = regex::Regex::new(r"\$\{([^}:]+):?\+([^}]*)\}").unwrap();
-        result = re
-            .replace_all(&result, |caps: &regex::Captures| {
-                let var_name = &caps[1];
-                let text = &caps[2];
+        while let Some(ch) = chars.next() {
+            if ch == '$' && chars.peek() == Some(&'{') {
+                chars.next(); // consume '{'
 
-                // Check if the variable has a value
-                let has_value = match var_name {
-                    "GIT_BRANCH" => self.git_info.branch.is_some(),
-                    "GIT_CLEAN" => self.git_info.status.as_ref().is_some_and(|s| s.clean),
-                    "GIT_STAGED" => self.git_info.status.as_ref().is_some_and(|s| s.staged),
-                    "GIT_MODIFIED" => self.git_info.status.as_ref().is_some_and(|s| s.modified),
-                    "GIT_UNTRACKED" => self.git_info.status.as_ref().is_some_and(|s| s.untracked),
-                    "GIT_AHEAD" => self.git_info.status.as_ref().is_some_and(|s| s.ahead > 0),
-                    "GIT_BEHIND" => self.git_info.status.as_ref().is_some_and(|s| s.behind > 0),
-                    _ => false,
-                };
+                // Find the variable name (up to ':' or '}')
+                let mut var_name = String::new();
+                let mut found_colon = false;
 
-                if has_value { text.to_string() } else { String::new() }
-            })
-            .to_string();
+                while let Some(&next_ch) = chars.peek() {
+                    if next_ch == ':' {
+                        chars.next(); // consume ':'
+                        found_colon = true;
+                        break;
+                    } else if next_ch == '}' {
+                        break;
+                    } else {
+                        var_name.push(chars.next().unwrap());
+                    }
+                }
+
+                if found_colon && chars.peek() == Some(&'+') {
+                    chars.next(); // consume '+'
+
+                    // Find the conditional text with proper brace matching
+                    let mut conditional_text = String::new();
+                    let mut brace_count = 1; // We're inside the outer braces
+
+                    for next_ch in chars.by_ref() {
+                        if next_ch == '{' {
+                            brace_count += 1;
+                            conditional_text.push(next_ch);
+                        } else if next_ch == '}' {
+                            brace_count -= 1;
+                            if brace_count == 0 {
+                                // Found the matching closing brace
+                                break;
+                            } else {
+                                conditional_text.push(next_ch);
+                            }
+                        } else {
+                            conditional_text.push(next_ch);
+                        }
+                    }
+
+                    // Check if the variable has a value
+                    let has_value = match var_name.as_str() {
+                        "GIT_BRANCH" => self.git_info.branch.is_some(),
+                        "GIT_CLEAN" => self.git_info.status.as_ref().is_some_and(|s| s.clean),
+                        "GIT_STAGED" => self.git_info.status.as_ref().is_some_and(|s| s.staged),
+                        "GIT_MODIFIED" => self.git_info.status.as_ref().is_some_and(|s| s.modified),
+                        "GIT_UNTRACKED" => self.git_info.status.as_ref().is_some_and(|s| s.untracked),
+                        "GIT_AHEAD" => self.git_info.status.as_ref().is_some_and(|s| s.ahead > 0),
+                        "GIT_BEHIND" => self.git_info.status.as_ref().is_some_and(|s| s.behind > 0),
+                        _ => false,
+                    };
+
+                    if has_value {
+                        // Process the conditional text recursively for nested variables
+                        let processed_text = self.replace_color_variables(&conditional_text);
+                        let processed_text = self.replace_git_variables(&processed_text);
+                        result.push_str(&processed_text);
+                    }
+                    // If empty or doesn't exist, add nothing
+                } else {
+                    // Not a conditional, put back what we consumed
+                    result.push('$');
+                    result.push('{');
+                    result.push_str(&var_name);
+                    if found_colon {
+                        result.push(':');
+                    }
+                    // Continue processing normally
+                }
+            } else {
+                result.push(ch);
+            }
+        }
 
         result
     }
@@ -183,6 +244,26 @@ impl ThemeRenderer {
             .replace("${CYAN}", CYAN)
             .replace("${RESET}", RESET)
             .replace("${BOLD}", BOLD)
+    }
+
+    fn replace_agent_variables(&self, template: &str) -> String {
+        let mut result = template.to_string();
+
+        result = self.replace_agent_variable(&result);
+        result = self.replace_usage_variable(&result);
+
+        result
+    }
+
+    fn replace_agent_variable(&self, template: &str) -> String {
+        let agent = std::env::var("Q_AGENT").unwrap_or_else(|_| "default".to_string());
+        template.replace("${AGENT}", &agent)
+    }
+
+    fn replace_usage_variable(&self, template: &str) -> String {
+        let usage = std::env::var("Q_USAGE").unwrap_or_default().trim().to_string();
+        let usage_display = if usage.is_empty() { "-".to_string() } else { usage };
+        template.replace("${USAGE}", &usage_display)
     }
 }
 

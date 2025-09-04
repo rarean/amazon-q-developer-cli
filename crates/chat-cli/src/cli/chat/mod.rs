@@ -599,7 +599,7 @@ pub struct ChatSession {
     interactive: bool,
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
-    theme_manager: Option<themes::ThemeManager>,
+    pub theme_manager: Option<themes::ThemeManager>,
     /// Current token usage percentage for display in themed prompts
     token_usage_percent: Option<f32>,
 }
@@ -696,7 +696,18 @@ impl ChatSession {
         let mut theme_manager = themes::ThemeManager::new(os).ok();
         if let Some(ref mut tm) = theme_manager {
             let _ = tm.ensure_theme_directory(os).await;
-            let _ = tm.load_default_theme();
+
+            // Load user's selected theme from settings, fallback to default
+            let current_theme = os
+                .database
+                .settings
+                .get_string(crate::database::settings::Setting::CurrentTheme)
+                .unwrap_or_else(|| "default".to_string());
+
+            if tm.load_theme(&current_theme).is_err() {
+                // If selected theme fails to load, fallback to default
+                let _ = tm.load_default_theme();
+            }
         }
 
         Ok(Self {
@@ -3092,7 +3103,7 @@ impl ChatSession {
         // Use themed prompt if available, otherwise fallback to default
         prompt_parser::generate_themed_prompt(
             profile.as_deref(),
-            all_trusted,
+            !all_trusted, // warning should be true when not all tools are trusted
             tangent_mode,
             self.theme_manager.as_ref(),
             self.token_usage_percent,

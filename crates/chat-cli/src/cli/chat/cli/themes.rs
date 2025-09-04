@@ -73,11 +73,8 @@ impl ThemesSubcommand {
     }
 
     fn get_theme_manager() -> ThemeManager {
-        let themes_dir = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".aws")
-            .join("amazonq")
-            .join("themes");
+        // Use a dummy path since we only use builtin themes
+        let themes_dir = PathBuf::from("/dev/null");
         ThemeManager::new(themes_dir)
     }
 
@@ -101,32 +98,34 @@ impl ThemesSubcommand {
     }
 
     async fn execute_switch(os: &mut Os, session: &mut ChatSession, name: &str) -> Result<ChatState, ChatError> {
-        let manager = Self::get_theme_manager();
+        // Try to load the theme into the session's theme manager
+        let theme_loaded = if let Some(ref mut theme_manager) = session.theme_manager {
+            theme_manager.load_theme(name).is_ok()
+        } else {
+            false
+        };
 
-        match manager.load_theme(name) {
-            Ok(_) => {
-                // Store the current theme in settings
-                if let Err(e) = os.database.settings.set(Setting::CurrentTheme, name.to_string()).await {
-                    return Err(ChatError::Custom(
-                        format!("Failed to save theme preference: {}", e).into(),
-                    ));
-                }
+        if theme_loaded {
+            // Store the current theme in settings
+            if let Err(e) = os.database.settings.set(Setting::CurrentTheme, name.to_string()).await {
+                return Err(ChatError::Custom(
+                    format!("Failed to save theme preference: {}", e).into(),
+                ));
+            }
 
-                queue!(
-                    session.stderr,
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format!("\n✓ Switched to theme: {}\n\n", name)),
-                    style::SetForegroundColor(Color::Reset)
-                )?;
-            },
-            Err(e) => {
-                queue!(
-                    session.stderr,
-                    style::SetForegroundColor(Color::Red),
-                    style::Print(format!("\n❌ {}\n\n", e)),
-                    style::SetForegroundColor(Color::Reset)
-                )?;
-            },
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(Color::Green),
+                style::Print(format!("\n✓ Switched to theme: {}\n\n", name)),
+                style::SetForegroundColor(Color::Reset)
+            )?;
+        } else {
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(Color::Red),
+                style::Print(format!("\n❌ Theme '{}' not found\n\n", name)),
+                style::SetForegroundColor(Color::Reset)
+            )?;
         }
 
         Ok(Self::default_chat_state())
@@ -343,6 +342,51 @@ mod tests {
                 // Just verify it doesn't panic
                 let _ = result;
             }
+        }
+
+        #[test]
+        fn test_theme_preview_rendering() {
+            let manager = ThemesSubcommand::get_theme_manager();
+
+            // Test that powerline theme can be loaded and rendered
+            let powerline_result = manager.load_theme("powerline");
+            assert!(powerline_result.is_ok(), "Should be able to load powerline theme");
+
+            // Test that minimal theme can be loaded and rendered
+            let minimal_result = manager.load_theme("minimal");
+            assert!(minimal_result.is_ok(), "Should be able to load minimal theme");
+
+            // Test that git-enabled theme can be loaded and rendered
+            let git_result = manager.load_theme("git-enabled");
+            assert!(git_result.is_ok(), "Should be able to load git-enabled theme");
+        }
+
+        #[test]
+        fn test_powerline_theme_content() {
+            let manager = ThemesSubcommand::get_theme_manager();
+            let template = manager.load_theme("powerline").expect("Should load powerline theme");
+
+            // Verify powerline theme contains expected elements
+            assert!(
+                template.contains("${AGENT}"),
+                "Powerline theme should contain AGENT variable"
+            );
+            assert!(
+                template.contains("${USAGE}"),
+                "Powerline theme should contain USAGE variable"
+            );
+            assert!(
+                template.contains("${GIT_BRANCH"),
+                "Powerline theme should contain GIT_BRANCH conditional"
+            );
+            assert!(
+                template.contains("\u{e0b0}"),
+                "Powerline theme should contain powerline separator"
+            );
+            assert!(
+                template.contains("\x1b["),
+                "Powerline theme should contain ANSI escape sequences"
+            );
         }
     }
 }
