@@ -390,6 +390,11 @@ impl Highlighter for ChatHelper {
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, _default: bool) -> Cow<'b, str> {
         use crossterm::style::Stylize;
 
+        // If the prompt already contains ANSI escape sequences (themed prompt), return as-is
+        if prompt.contains('\x1b') {
+            return Cow::Borrowed(prompt);
+        }
+
         // Parse the plain text prompt to extract profile and warning information
         // and apply colors using crossterm's ANSI escape codes
         if let Some(components) = parse_prompt_components(prompt) {
@@ -659,6 +664,27 @@ mod tests {
             highlighted,
             format!("{}{}{}", "[dev] ".cyan(), "↯ ".yellow(), "> ".magenta())
         );
+    }
+
+    #[test]
+    fn test_highlight_prompt_with_ansi_sequences() {
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(1);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
+        let helper = ChatHelper {
+            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
+            hinter: ChatHinter::new(true),
+            validator: MultiLineValidator,
+        };
+
+        // Test that prompts with ANSI escape sequences are returned as-is
+        let themed_prompt = "\u{001b}[36m[test]\u{001b}[0m > ";
+        let highlighted = helper.highlight_prompt(themed_prompt, true);
+        assert_eq!(highlighted, themed_prompt);
+
+        // Test another themed prompt
+        let complex_themed_prompt = "\u{001b}[36m[agent]\u{001b}[0m \u{001b}[32m(main)\u{001b}[0m > ";
+        let highlighted2 = helper.highlight_prompt(complex_themed_prompt, true);
+        assert_eq!(highlighted2, complex_themed_prompt);
     }
 
     #[test]

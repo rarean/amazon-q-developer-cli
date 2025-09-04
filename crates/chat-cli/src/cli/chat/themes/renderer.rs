@@ -63,8 +63,45 @@ impl<'a> ThemeRenderer<'a> {
             if let Some(git) = git_info {
                 if git.is_repo {
                     if let Some(branch) = &git.branch {
+                        vars.insert("GIT_BRANCH".to_string(), branch.clone());
                         vars.insert("Q_GIT_BRANCH".to_string(), branch.clone());
                     }
+
+                    // Set git status variables
+                    if git.is_dirty {
+                        vars.insert(
+                            "GIT_DIRTY".to_string(),
+                            self.theme
+                                .get_variable("Q_GIT_DIRTY")
+                                .unwrap_or(&"±".to_string())
+                                .clone(),
+                        );
+                        vars.insert(
+                            "GIT_MODIFIED".to_string(),
+                            self.theme
+                                .get_variable("Q_GIT_DIRTY")
+                                .unwrap_or(&"±".to_string())
+                                .clone(),
+                        );
+                        vars.insert("GIT_CLEAN".to_string(), String::new());
+                    } else {
+                        vars.insert(
+                            "GIT_CLEAN".to_string(),
+                            self.theme
+                                .get_variable("Q_GIT_CLEAN")
+                                .unwrap_or(&"✓".to_string())
+                                .clone(),
+                        );
+                        vars.insert("GIT_DIRTY".to_string(), String::new());
+                        vars.insert("GIT_MODIFIED".to_string(), String::new());
+                    }
+
+                    // Set other git status variables (empty for now since we don't have detailed git status)
+                    vars.insert("GIT_STAGED".to_string(), String::new());
+                    vars.insert("GIT_UNTRACKED".to_string(), String::new());
+                    vars.insert("GIT_AHEAD".to_string(), String::new());
+                    vars.insert("GIT_BEHIND".to_string(), String::new());
+
                     vars.insert(
                         "Q_GIT_STATUS".to_string(),
                         if git.is_dirty { "dirty" } else { "clean" }.to_string(),
@@ -133,5 +170,81 @@ mod tests {
 
         let result = renderer.render_prompt(None, false, false, None);
         assert_eq!(result, "\u{001b}[36m[]\u{001b}[0m > ");
+    }
+
+    #[test]
+    fn test_render_prompt_with_git_variables() {
+        let mut theme = BashTheme::new("test".to_string());
+        theme.prompt_template =
+            "$Q_AGENT_COLOR[$Q_AGENT]$RESET_COLOR ${GIT_BRANCH:+($GIT_BRANCH$GIT_CLEAN)} > ".to_string();
+        theme.set_variable("Q_AGENT_COLOR".to_string(), "\u{001b}[36m".to_string());
+        theme.set_variable("RESET_COLOR".to_string(), "\u{001b}[0m".to_string());
+        theme.set_variable("Q_GIT_CLEAN".to_string(), "✓".to_string());
+        theme.git_enabled = true;
+
+        let renderer = ThemeRenderer::new(&theme);
+
+        let git_info = GitInfo {
+            branch: Some("main".to_string()),
+            is_dirty: false,
+            is_repo: true,
+        };
+
+        let result = renderer.render_prompt(Some("test-agent"), false, false, Some(&git_info));
+
+        // Should contain the git branch and clean symbol
+        assert!(result.contains("main"));
+        assert!(result.contains("✓"));
+        assert!(result.contains("test-agent"));
+    }
+
+    #[test]
+    fn test_render_prompt_with_dirty_git_status() {
+        let mut theme = BashTheme::new("test".to_string());
+        theme.prompt_template =
+            "$Q_AGENT_COLOR[$Q_AGENT]$RESET_COLOR ${GIT_BRANCH:+($GIT_BRANCH$GIT_DIRTY)} > ".to_string();
+        theme.set_variable("Q_AGENT_COLOR".to_string(), "\u{001b}[36m".to_string());
+        theme.set_variable("RESET_COLOR".to_string(), "\u{001b}[0m".to_string());
+        theme.set_variable("Q_GIT_DIRTY".to_string(), "±".to_string());
+        theme.git_enabled = true;
+
+        let renderer = ThemeRenderer::new(&theme);
+
+        let git_info = GitInfo {
+            branch: Some("feature".to_string()),
+            is_dirty: true,
+            is_repo: true,
+        };
+
+        let result = renderer.render_prompt(Some("test-agent"), false, false, Some(&git_info));
+
+        // Should contain the git branch and dirty symbol
+        assert!(result.contains("feature"));
+        assert!(result.contains("±"));
+        assert!(!result.contains("✓")); // Should not contain clean symbol
+    }
+
+    #[test]
+    fn test_render_prompt_no_git_repo() {
+        let mut theme = BashTheme::new("test".to_string());
+        theme.prompt_template = "$Q_AGENT_COLOR[$Q_AGENT]$RESET_COLOR ${GIT_BRANCH:+($GIT_BRANCH)} > ".to_string();
+        theme.set_variable("Q_AGENT_COLOR".to_string(), "\u{001b}[36m".to_string());
+        theme.set_variable("RESET_COLOR".to_string(), "\u{001b}[0m".to_string());
+        theme.git_enabled = true;
+
+        let renderer = ThemeRenderer::new(&theme);
+
+        let git_info = GitInfo {
+            branch: None,
+            is_dirty: false,
+            is_repo: false,
+        };
+
+        let result = renderer.render_prompt(Some("test-agent"), false, false, Some(&git_info));
+
+        // Should not contain git information when not in a repo
+        assert!(!result.contains("("));
+        assert!(!result.contains(")"));
+        assert!(result.contains("test-agent"));
     }
 }

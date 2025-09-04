@@ -41,6 +41,49 @@ impl ThemeRenderer {
         Self { git_info }
     }
 
+    pub fn has_git_repo(&self) -> bool {
+        self.git_info.is_repo
+    }
+
+    pub fn validate_theme(&self, template: &str) -> Result<(), String> {
+        // Basic validation - check for balanced braces
+        let open_braces = template.matches("${").count();
+        let close_braces = template.matches('}').count();
+
+        if open_braces != close_braces {
+            return Err("Unbalanced braces in theme template".to_string());
+        }
+
+        // Check for unknown variables
+        let valid_vars = [
+            "RED",
+            "GREEN",
+            "YELLOW",
+            "BLUE",
+            "MAGENTA",
+            "CYAN",
+            "RESET",
+            "BOLD",
+            "GIT_BRANCH",
+            "GIT_CLEAN",
+            "GIT_STAGED",
+            "GIT_MODIFIED",
+            "GIT_UNTRACKED",
+            "GIT_AHEAD",
+            "GIT_BEHIND",
+        ];
+
+        let re = regex::Regex::new(r"\$\{([^}:]+)").unwrap();
+        for caps in re.captures_iter(template) {
+            let var_name = &caps[1];
+            if !valid_vars.contains(&var_name) {
+                return Err(format!("Unknown variable: {}", var_name));
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn render_prompt(&self, template: &str) -> String {
         let mut result = template.to_string();
 
@@ -48,24 +91,77 @@ impl ThemeRenderer {
         result = self.process_conditional_formatting(&result);
 
         // Replace git variables
+        result = self.replace_git_variables(&result);
+
+        // Replace color variables
+        result = self.replace_color_variables(&result);
+
+        result
+    }
+
+    fn process_conditional_formatting(&self, template: &str) -> String {
+        let mut result = template.to_string();
+
+        // Handle ${VAR:+text} syntax - show text if VAR is non-empty
+        let re = regex::Regex::new(r"\$\{([^}:]+):?\+([^}]*)\}").unwrap();
+        result = re
+            .replace_all(&result, |caps: &regex::Captures| {
+                let var_name = &caps[1];
+                let text = &caps[2];
+
+                // Check if the variable has a value
+                let has_value = match var_name {
+                    "GIT_BRANCH" => self.git_info.branch.is_some(),
+                    "GIT_CLEAN" => self.git_info.status.as_ref().is_some_and(|s| s.clean),
+                    "GIT_STAGED" => self.git_info.status.as_ref().is_some_and(|s| s.staged),
+                    "GIT_MODIFIED" => self.git_info.status.as_ref().is_some_and(|s| s.modified),
+                    "GIT_UNTRACKED" => self.git_info.status.as_ref().is_some_and(|s| s.untracked),
+                    "GIT_AHEAD" => self.git_info.status.as_ref().is_some_and(|s| s.ahead > 0),
+                    "GIT_BEHIND" => self.git_info.status.as_ref().is_some_and(|s| s.behind > 0),
+                    _ => false,
+                };
+
+                if has_value { text.to_string() } else { String::new() }
+            })
+            .to_string();
+
+        result
+    }
+
+    fn replace_git_variables(&self, template: &str) -> String {
+        let mut result = template.to_string();
+
+        // Replace git branch
         if let Some(branch) = &self.git_info.branch {
             result = result.replace("${GIT_BRANCH}", branch);
         } else {
             result = result.replace("${GIT_BRANCH}", "");
         }
 
-        // Replace git status indicators with colored versions
+        // Replace git status indicators
         if let Some(status) = &self.git_info.status {
-            result = result.replace("${GIT_CLEAN}", if status.clean { "\x1b[32m✓\x1b[0m" } else { "" });
-            result = result.replace("${GIT_STAGED}", if status.staged { "\x1b[32m●\x1b[0m" } else { "" });
-            result = result.replace("${GIT_MODIFIED}", if status.modified { "\x1b[33m±\x1b[0m" } else { "" });
+            result = result.replace("${GIT_CLEAN}", if status.clean { "✓" } else { "" });
+            result = result.replace("${GIT_STAGED}", if status.staged { "●" } else { "" });
+            result = result.replace("${GIT_MODIFIED}", if status.modified { "✚" } else { "" });
+            result = result.replace("${GIT_UNTRACKED}", if status.untracked { "?" } else { "" });
             result = result.replace(
-                "${GIT_UNTRACKED}",
-                if status.untracked { "\x1b[31m?\x1b[0m" } else { "" },
+                "${GIT_AHEAD}",
+                &if status.ahead > 0 {
+                    format!("↑{}", status.ahead)
+                } else {
+                    String::new()
+                },
             );
-            result = result.replace("${GIT_AHEAD}", if status.ahead > 0 { "\x1b[36m↑\x1b[0m" } else { "" });
-            result = result.replace("${GIT_BEHIND}", if status.behind > 0 { "\x1b[35m↓\x1b[0m" } else { "" });
+            result = result.replace(
+                "${GIT_BEHIND}",
+                &if status.behind > 0 {
+                    format!("↓{}", status.behind)
+                } else {
+                    String::new()
+                },
+            );
         } else {
+            // No git status available
             result = result.replace("${GIT_CLEAN}", "");
             result = result.replace("${GIT_STAGED}", "");
             result = result.replace("${GIT_MODIFIED}", "");
@@ -74,13 +170,10 @@ impl ThemeRenderer {
             result = result.replace("${GIT_BEHIND}", "");
         }
 
-        // Process color codes last
-        result = self.process_colors(&result);
-
         result
     }
 
-    fn process_colors(&self, template: &str) -> String {
+    fn replace_color_variables(&self, template: &str) -> String {
         template
             .replace("${RED}", RED)
             .replace("${GREEN}", GREEN)
@@ -88,89 +181,26 @@ impl ThemeRenderer {
             .replace("${BLUE}", BLUE)
             .replace("${MAGENTA}", MAGENTA)
             .replace("${CYAN}", CYAN)
-            .replace("${BOLD}", BOLD)
             .replace("${RESET}", RESET)
+            .replace("${BOLD}", BOLD)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_render_basic_template() {
+        let renderer = ThemeRenderer::new();
+        let result = renderer.render_prompt("${GREEN}> ${RESET}");
+        assert_eq!(result, "\x1b[32m> \x1b[0m");
     }
 
-    fn process_conditional_formatting(&self, template: &str) -> String {
-        use regex::Regex;
-
-        let re = Regex::new(r"\$\{([^:}]+):?\+([^}]*)\}").unwrap();
-
-        re.replace_all(template, |caps: &regex::Captures| {
-            let var_name = &caps[1];
-            let value_if_set = &caps[2];
-
-            let is_set = match var_name {
-                "GIT_BRANCH" => self.git_info.branch.is_some(),
-                "GIT_CLEAN" => self.git_info.status.as_ref().is_some_and(|s| s.clean),
-                "GIT_STAGED" => self.git_info.status.as_ref().is_some_and(|s| s.staged),
-                "GIT_MODIFIED" => self.git_info.status.as_ref().is_some_and(|s| s.modified),
-                "GIT_UNTRACKED" => self.git_info.status.as_ref().is_some_and(|s| s.untracked),
-                "GIT_AHEAD" => self.git_info.status.as_ref().is_some_and(|s| s.ahead > 0),
-                "GIT_BEHIND" => self.git_info.status.as_ref().is_some_and(|s| s.behind > 0),
-                _ => false,
-            };
-
-            if is_set {
-                value_if_set.to_string()
-            } else {
-                String::new()
-            }
-        })
-        .to_string()
-    }
-
-    pub fn has_git_repo(&self) -> bool {
-        self.git_info.is_repo
-    }
-
-    pub fn validate_theme(&self, template: &str) -> Result<(), String> {
-        // Check for balanced braces
-        let mut brace_count = 0;
-        let mut in_variable = false;
-
-        for ch in template.chars() {
-            match ch {
-                '$' => {
-                    // Check if next char is '{'
-                    continue;
-                },
-                '{' if template.chars().nth(template.find(ch).unwrap_or(0).saturating_sub(1)) == Some('$') => {
-                    brace_count += 1;
-                    in_variable = true;
-                },
-                '}' if in_variable => {
-                    brace_count -= 1;
-                    if brace_count == 0 {
-                        in_variable = false;
-                    }
-                },
-                _ => continue,
-            }
-        }
-
-        if brace_count != 0 {
-            return Err("Unbalanced braces in theme template".to_string());
-        }
-
-        // Validate variable names
-        use regex::Regex;
-        let var_re = Regex::new(r"\$\{([^}:]+)(?::[^}]*)?\}").unwrap();
-
-        for caps in var_re.captures_iter(template) {
-            let var_name = &caps[1];
-            match var_name {
-                "GIT_BRANCH" | "GIT_CLEAN" | "GIT_STAGED" | "GIT_MODIFIED" | "GIT_UNTRACKED" | "GIT_AHEAD"
-                | "GIT_BEHIND" | "RED" | "GREEN" | "YELLOW" | "BLUE" | "MAGENTA" | "CYAN" | "BOLD" | "RESET" => {
-                    // Valid variable
-                },
-                _ => {
-                    return Err(format!("Unknown variable: {}", var_name));
-                },
-            }
-        }
-
-        Ok(())
+    #[test]
+    fn test_validate_theme() {
+        let renderer = ThemeRenderer::new();
+        assert!(renderer.validate_theme("${GREEN}> ${RESET}").is_ok());
+        assert!(renderer.validate_theme("${GREEN> ${RESET}").is_err());
     }
 }
