@@ -79,6 +79,10 @@ pub enum Setting {
     ChatEnableHistoryHints,
     #[strum(message = "Enable the todo list feature (boolean)")]
     EnabledTodoList,
+    #[strum(message = "Enable themes functionality (boolean)")]
+    EnabledThemes,
+    #[strum(message = "Current active theme name (string)")]
+    CurrentTheme,
 }
 
 impl AsRef<str> for Setting {
@@ -115,6 +119,8 @@ impl AsRef<str> for Setting {
             Self::ChatDisableAutoCompaction => "chat.disableAutoCompaction",
             Self::ChatEnableHistoryHints => "chat.enableHistoryHints",
             Self::EnabledTodoList => "chat.enableTodoList",
+            Self::EnabledThemes => "chat.enableThemes",
+            Self::CurrentTheme => "chat.currentTheme",
         }
     }
 }

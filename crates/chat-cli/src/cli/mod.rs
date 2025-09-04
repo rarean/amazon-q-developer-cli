@@ -6,6 +6,7 @@ mod feed;
 mod issue;
 mod mcp;
 mod settings;
+mod theme;
 mod user;
 
 use std::fmt::Display;
@@ -105,6 +106,8 @@ pub enum RootSubcommand {
     /// Customize appearance & behavior
     #[command(alias("setting"))]
     Settings(settings::SettingsArgs),
+    /// Manage prompt themes
+    Theme(theme::ThemeArgs),
     /// Run diagnostic tests
     #[command(alias("diagnostics"))]
     Diagnostic(diagnostics::DiagnosticArgs),
@@ -160,6 +163,7 @@ impl RootSubcommand {
             Self::Whoami(args) => args.execute(os).await,
             Self::Profile => user::profile(os).await,
             Self::Settings(settings_args) => settings_args.execute(os).await,
+            Self::Theme(args) => args.execute(os).await.map(|_| ExitCode::SUCCESS),
             Self::Issue(args) => args.execute(os).await,
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Chat(args) => args.execute(os).await,
@@ -184,6 +188,7 @@ impl Display for RootSubcommand {
             Self::Whoami(_) => "whoami",
             Self::Profile => "profile",
             Self::Settings(_) => "settings",
+            Self::Theme(_) => "theme",
             Self::Diagnostic(_) => "diagnostic",
             Self::Issue(_) => "issue",
             Self::Version { .. } => "version",

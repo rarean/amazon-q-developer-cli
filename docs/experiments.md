@@ -25,6 +25,28 @@ Amazon Q CLI includes experimental features that can be toggled on/off using the
 /knowledge cancel           # Cancel background operation
 ```
 
+### Themes
+**Command:** `/themes`  
+**Description:** Enables dynamic theme switching for prompt customization within chat sessions
+
+**Features:**
+- Switch between available prompt themes without restarting
+- Preview themes before applying them
+- Interactive theme selection with visual feedback
+- Persistent theme preferences across sessions
+- List all available themes
+
+**Usage:**
+```
+/themes list                # Show all available themes
+/themes switch <name>       # Switch to a specific theme
+/themes preview <name>      # Preview a theme without applying
+/themes current             # Show the currently active theme
+/themes select              # Interactive theme selection menu
+```
+
+**When enabled:** Use `/themes` commands to customize your prompt appearance and switch between different visual styles during your chat session.
+
 ### Thinking
 **Description:** Enables complex reasoning with step-by-step thought processes
 
@@ -84,11 +106,14 @@ These features are provided to gather feedback and test new capabilities. Please
 All experimental commands are available in the fuzzy search (Ctrl+S):
 - `/experiment` - Manage experimental features
 - `/knowledge` - Knowledge base commands (when enabled)
+- `/themes` - Theme management commands (when enabled)
 
 ## Settings Integration
 
 Experiments are stored as settings and persist across sessions:
 - `EnabledKnowledge` - Knowledge experiment state
 - `EnabledThinking` - Thinking experiment state
+- `EnabledThemes` - Themes experiment state
+- `CurrentTheme` - Currently selected theme name
 
 You can also manage these through the settings system if needed.

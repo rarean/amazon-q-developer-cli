@@ -50,6 +50,16 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         description: "Enables Q to create todo lists that can be viewed and managed using /todos",
         setting_key: Setting::EnabledTodoList,
     },
+    Experiment {
+        name: "Custom Commands",
+        description: "Enables user-defined custom commands (/commands, /project:name, /user:name)",
+        setting_key: Setting::EnabledCommands,
+    },
+    Experiment {
+        name: "Themes",
+        description: "Enables dynamic theme switching within chat sessions (/themes)",
+        setting_key: Setting::EnabledThemes,
+    },
 ];
 
 #[derive(Debug, PartialEq, Args)]
