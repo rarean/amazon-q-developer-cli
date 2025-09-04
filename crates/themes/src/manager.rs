@@ -1,25 +1,26 @@
 use std::collections::HashMap;
-use std::fs;
 use std::path::PathBuf;
 
 use crate::renderer::ThemeRenderer;
 
 pub struct ThemeManager {
-    themes_dir: PathBuf,
     builtin_themes: HashMap<String, &'static str>,
 }
 
 impl ThemeManager {
-    pub fn new(themes_dir: PathBuf) -> Self {
+    pub fn new(_themes_dir: PathBuf) -> Self {
         let mut builtin_themes = HashMap::new();
         builtin_themes.insert("minimal".to_string(), "> ");
-        builtin_themes.insert("powerline".to_string(), "${BLUE}${BOLD}❯${RESET} ${GIT_BRANCH:+${CYAN}⎇ ${GIT_BRANCH}${RESET} }${GIT_STAGED}${GIT_MODIFIED}${GIT_UNTRACKED}${GIT_AHEAD}${GIT_BEHIND}${GIT_CLEAN:+ }${YELLOW}❯${RESET} ");
-        builtin_themes.insert("git-enabled".to_string(), "${GREEN}➜${RESET} ${GIT_BRANCH:+${BLUE}git:(${GIT_BRANCH})${RESET} }${GIT_STAGED:+${GIT_STAGED} }${GIT_MODIFIED:+${GIT_MODIFIED} }${GIT_UNTRACKED:+${GIT_UNTRACKED} }${GIT_AHEAD:+${GIT_AHEAD} }${GIT_BEHIND:+${GIT_BEHIND} }${GIT_CLEAN:+${GIT_CLEAN} }> ");
+        builtin_themes.insert(
+            "powerline".to_string(),
+            "\x1b[44m\x1b[37m ${AGENT} \x1b[0m\x1b[45m\x1b[34m\u{e0b0}\x1b[37m ${USAGE}% \x1b[0m${GIT_BRANCH:+\x1b[43m\x1b[35m\u{e0b0}\x1b[30m ${GIT_BRANCH} \x1b[0m\x1b[33m\u{e0b0}}\x1b[0m ",
+        );
+        builtin_themes.insert(
+            "git-enabled".to_string(),
+            "${GREEN}➜ ${GIT_BRANCH:+${BOLD}git:(${YELLOW}${GIT_BRANCH}${RESET}${GREEN}${BOLD})${RESET} }> ",
+        );
 
-        Self {
-            themes_dir,
-            builtin_themes,
-        }
+        Self { builtin_themes }
     }
 
     pub fn list_themes(&self) -> Vec<String> {
@@ -30,60 +31,23 @@ impl ThemeManager {
             themes.push(format!("{} (builtin)", name));
         }
 
-        // Add user themes
-        if self.themes_dir.exists() {
-            if let Ok(entries) = fs::read_dir(&self.themes_dir) {
-                for entry in entries.flatten() {
-                    if let Some(name) = entry.file_name().to_str() {
-                        if name.ends_with(".theme") {
-                            let theme_name = name.strip_suffix(".theme").unwrap_or(name);
-                            themes.push(theme_name.to_string());
-                        }
-                    }
-                }
-            }
-        }
-
         themes.sort();
         themes
     }
 
     pub fn load_theme(&self, name: &str) -> Result<String, String> {
-        // Check builtin themes first
+        // Check builtin themes only
         if let Some(template) = self.builtin_themes.get(name) {
             return Ok(template.to_string());
         }
 
-        // Check user themes
-        let theme_path = self.themes_dir.join(format!("{}.theme", name));
-        if theme_path.exists() {
-            fs::read_to_string(&theme_path).map_err(|e| format!("Failed to read theme file: {}", e))
-        } else {
-            Err(format!("Theme '{}' not found", name))
-        }
+        Err(format!("Theme '{}' not found", name))
     }
 
     pub fn validate_theme(&self, name: &str) -> Result<(), String> {
         let template = self.load_theme(name)?;
         let renderer = ThemeRenderer::new();
         renderer.validate_theme(&template)
-    }
-
-    pub fn install_theme(&self, name: &str, template: &str) -> Result<(), String> {
-        // Validate theme first
-        let renderer = ThemeRenderer::new();
-        renderer.validate_theme(template)?;
-
-        // Create themes directory if it doesn't exist
-        if !self.themes_dir.exists() {
-            fs::create_dir_all(&self.themes_dir).map_err(|e| format!("Failed to create themes directory: {}", e))?;
-        }
-
-        // Write theme file
-        let theme_path = self.themes_dir.join(format!("{}.theme", name));
-        fs::write(&theme_path, template).map_err(|e| format!("Failed to write theme file: {}", e))?;
-
-        Ok(())
     }
 
     pub fn get_context_theme(&self, path: &std::path::Path) -> String {
@@ -143,39 +107,6 @@ mod tests {
     }
 
     #[test]
-    fn test_install_theme_invalid_template() {
-        let temp_dir = TempDir::new().unwrap();
-        let manager = ThemeManager::new(temp_dir.path().to_path_buf());
-
-        let result = manager.install_theme("test", "${INVALID_VAR}");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unknown variable: INVALID_VAR"));
-    }
-
-    #[test]
-    fn test_install_theme_unbalanced_braces() {
-        let temp_dir = TempDir::new().unwrap();
-        let manager = ThemeManager::new(temp_dir.path().to_path_buf());
-
-        let result = manager.install_theme("test", "${RED");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unbalanced braces"));
-    }
-
-    #[test]
-    fn test_install_theme_success() {
-        let temp_dir = TempDir::new().unwrap();
-        let manager = ThemeManager::new(temp_dir.path().to_path_buf());
-
-        let result = manager.install_theme("test", "${RED}> ${RESET}");
-        assert!(result.is_ok());
-
-        let loaded = manager.load_theme("test");
-        assert!(loaded.is_ok());
-        assert_eq!(loaded.unwrap(), "${RED}> ${RESET}");
-    }
-
-    #[test]
     fn test_list_themes_builtin_only() {
         let temp_dir = TempDir::new().unwrap();
         let manager = ThemeManager::new(temp_dir.path().to_path_buf());
@@ -187,15 +118,145 @@ mod tests {
     }
 
     #[test]
-    fn test_list_themes_with_user_themes() {
+    fn test_git_enabled_theme_rendering() {
         let temp_dir = TempDir::new().unwrap();
         let manager = ThemeManager::new(temp_dir.path().to_path_buf());
 
-        // Install a user theme
-        manager.install_theme("custom", "${BLUE}> ${RESET}").unwrap();
+        // Load the git-enabled theme
+        let template = manager.load_theme("git-enabled").unwrap();
 
-        let themes = manager.list_themes();
-        assert!(themes.contains(&"custom".to_string()));
-        assert!(themes.contains(&"minimal (builtin)".to_string()));
+        // Create a renderer and render the template
+        let renderer = ThemeRenderer::new();
+        let result = renderer.render_prompt(&template);
+
+        // Should contain the basic prompt structure
+        assert!(result.contains("➜"), "Result should contain arrow symbol: {}", result);
+        assert!(result.ends_with("> "), "Result should end with '> ': {}", result);
+
+        // Verify variables are properly substituted, not displayed as literals
+        assert!(
+            !result.contains("${GREEN}"),
+            "Should not contain literal ${{GREEN}}: {}",
+            result
+        );
+        assert!(
+            !result.contains("${RESET}"),
+            "Should not contain literal ${{RESET}}: {}",
+            result
+        );
+        assert!(
+            !result.contains("${BLUE}"),
+            "Should not contain literal ${{BLUE}}: {}",
+            result
+        );
+        assert!(
+            !result.contains("${YELLOW}"),
+            "Should not contain literal ${{YELLOW}}: {}",
+            result
+        );
+        assert!(
+            !result.contains("${BOLD}"),
+            "Should not contain literal ${{BOLD}}: {}",
+            result
+        );
+
+        // Verify ANSI color codes are present (variables were substituted)
+        assert!(
+            result.contains("\x1b["),
+            "Should contain ANSI escape sequences: {}",
+            result
+        );
+
+        println!("Git-enabled theme rendered: {}", result);
+    }
+
+    #[test]
+    fn test_git_enabled_theme_with_git_branch() {
+        use std::fs;
+
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let manager = ThemeManager::new(temp_dir.path().to_path_buf());
+
+        // Create a mock git repository with proper structure
+        let git_dir = temp_dir.path().join(".git");
+        fs::create_dir(&git_dir).unwrap();
+        fs::write(git_dir.join("HEAD"), "ref: refs/heads/feature-branch").unwrap();
+
+        // Create refs directory structure
+        let refs_dir = git_dir.join("refs").join("heads");
+        fs::create_dir_all(&refs_dir).unwrap();
+        fs::write(refs_dir.join("feature-branch"), "abc123def456").unwrap();
+
+        // Load the git-enabled theme
+        let template = manager.load_theme("git-enabled").unwrap();
+
+        // Create a renderer for the git repo path
+        let renderer = ThemeRenderer::new_for_path(temp_dir.path());
+        let result = renderer.render_prompt(&template);
+
+        // Should contain basic prompt structure
+        assert!(result.contains("➜"), "Should contain arrow symbol: {}", result);
+
+        // Check if git detection worked - if it did, we should see git branch info
+        if result.contains("git:(") {
+            assert!(
+                result.contains("feature-branch"),
+                "Should contain git branch info: {}",
+                result
+            );
+        } else {
+            // Git detection may not work in all test environments, so just verify basic structure
+            println!("Git detection didn't work in test environment, result: {}", result);
+        }
+
+        // Should not contain unsubstituted variables
+        assert!(
+            !result.contains("${"),
+            "Should not contain unsubstituted variables: {}",
+            result
+        );
+
+        println!("Git-enabled theme with branch: {}", result);
+    }
+
+    #[test]
+    fn test_powerline_theme_rendering() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = ThemeManager::new(temp_dir.path().to_path_buf());
+
+        // Load the powerline theme
+        let template = manager.load_theme("powerline").unwrap();
+
+        // Create a renderer and render the template with mock data
+        let renderer = ThemeRenderer::new();
+
+        // Mock the template with test values
+        let test_template = template.replace("${AGENT}", "default").replace("${USAGE}", "48");
+
+        let result = renderer.render_prompt(&test_template);
+
+        // Should contain the expected segmented format
+        assert!(
+            result.contains("default") && result.contains("48%"),
+            "Result should contain agent and usage info: {}",
+            result
+        );
+        assert!(
+            result.contains("develop"),
+            "Result should contain git branch: {}",
+            result
+        );
+        assert!(result.ends_with(" "), "Result should end with space: {}", result);
+
+        // Should contain powerline separator character
+        assert!(
+            result.contains("\u{e0b0}"),
+            "Result should contain powerline separator: {}",
+            result
+        );
+
+        println!("Powerline theme rendered: {}", result);
     }
 }

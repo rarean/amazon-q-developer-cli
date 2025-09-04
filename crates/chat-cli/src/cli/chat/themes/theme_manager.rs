@@ -29,6 +29,14 @@ impl ThemeManager {
 
     /// Load a theme by name
     pub fn load_theme(&mut self, name: &str) -> Result<()> {
+        // First try to load builtin themes from the standalone themes system
+        if let Ok(builtin_theme) = Self::load_builtin_theme(name) {
+            debug!("Loaded builtin theme: {}", builtin_theme.name);
+            self.active_theme = Some(builtin_theme);
+            return Ok(());
+        }
+
+        // Fallback to loading from theme files
         let theme_path = self.theme_dir.join(format!("{}.theme", name));
 
         if !theme_path.exists() {
@@ -50,6 +58,34 @@ impl ThemeManager {
         Ok(())
     }
 
+    /// Load a builtin theme from the standalone themes system
+    fn load_builtin_theme(name: &str) -> Result<BashTheme> {
+        // Create a standalone theme manager to access builtin themes
+        let standalone_manager = themes::ThemeManager::new(PathBuf::new());
+
+        match standalone_manager.load_theme(name) {
+            Ok(template) => {
+                // Convert the standalone theme template to a BashTheme
+                let mut bash_theme = BashTheme::new(name.to_string());
+                bash_theme.git_enabled = template.contains("GIT_BRANCH");
+                bash_theme.prompt_template = template;
+
+                // Add standard color variables that themes expect
+                bash_theme.set_variable("GREEN".to_string(), "\x1b[32m".to_string());
+                bash_theme.set_variable("RED".to_string(), "\x1b[31m".to_string());
+                bash_theme.set_variable("YELLOW".to_string(), "\x1b[33m".to_string());
+                bash_theme.set_variable("BLUE".to_string(), "\x1b[34m".to_string());
+                bash_theme.set_variable("MAGENTA".to_string(), "\x1b[35m".to_string());
+                bash_theme.set_variable("CYAN".to_string(), "\x1b[36m".to_string());
+                bash_theme.set_variable("RESET".to_string(), "\x1b[0m".to_string());
+                bash_theme.set_variable("BOLD".to_string(), "\x1b[1m".to_string());
+
+                Ok(bash_theme)
+            },
+            Err(e) => Err(eyre::eyre!("Failed to load builtin theme: {}", e)),
+        }
+    }
+
     /// Get the currently active theme
     pub fn get_active_theme(&self) -> Option<&BashTheme> {
         self.active_theme.as_ref()
@@ -57,6 +93,12 @@ impl ThemeManager {
 
     /// Try to load the default theme
     pub fn load_default_theme(&mut self) -> Result<()> {
+        // Try to load "minimal" as the default builtin theme
+        if self.load_theme("minimal").is_ok() && self.active_theme.is_some() {
+            return Ok(());
+        }
+
+        // Fallback to loading "default" from theme files
         self.load_theme("default")
     }
 
@@ -74,21 +116,30 @@ impl ThemeManager {
     pub async fn list_available_themes(&self, os: &Os) -> Result<Vec<String>> {
         let mut themes = Vec::new();
 
-        if !os.fs.exists(&self.theme_dir) {
-            return Ok(themes);
+        // Add builtin themes
+        let standalone_manager = themes::ThemeManager::new(PathBuf::new());
+        let builtin_themes = standalone_manager.list_themes();
+        for theme in builtin_themes {
+            // Remove " (builtin)" suffix if present
+            let theme_name = theme.replace(" (builtin)", "");
+            themes.push(theme_name);
         }
 
-        let mut entries = os.fs.read_dir(&self.theme_dir).await?;
-        while let Some(entry) = entries.next_entry().await? {
-            if let Some(name) = entry.file_name().to_str() {
-                if name.ends_with(".theme") {
-                    let theme_name = name.trim_end_matches(".theme");
-                    themes.push(theme_name.to_string());
+        // Add file-based themes
+        if os.fs.exists(&self.theme_dir) {
+            let mut entries = os.fs.read_dir(&self.theme_dir).await?;
+            while let Some(entry) = entries.next_entry().await? {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.ends_with(".theme") {
+                        let theme_name = name.trim_end_matches(".theme");
+                        themes.push(theme_name.to_string());
+                    }
                 }
             }
         }
 
         themes.sort();
+        themes.dedup(); // Remove duplicates in case builtin and file themes have same name
         Ok(themes)
     }
 }
@@ -123,5 +174,20 @@ mod tests {
         let result = manager.load_theme("nonexistent");
         assert!(result.is_ok());
         assert!(manager.get_active_theme().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_load_builtin_theme() {
+        let os = Os::new().await.unwrap();
+        let mut manager = ThemeManager::new(&os).unwrap();
+
+        // Should be able to load builtin themes
+        let result = manager.load_theme("powerline");
+        assert!(result.is_ok());
+
+        if let Some(theme) = manager.get_active_theme() {
+            assert_eq!(theme.name, "powerline");
+            assert!(theme.git_enabled); // powerline theme should have git support
+        }
     }
 }
