@@ -1,3 +1,10 @@
+use std::env;
+
+use super::themes::renderer::ThemeRenderer;
+use super::themes::{
+    GitInfo,
+    ThemeManager,
+};
 use crate::cli::agent::DEFAULT_AGENT_NAME;
 
 /// Components extracted from a prompt string
@@ -6,6 +13,40 @@ pub struct PromptComponents {
     pub profile: Option<String>,
     pub warning: bool,
     pub tangent_mode: bool,
+}
+
+/// Generate a themed prompt if theme manager is available, otherwise fallback to basic prompt
+pub fn generate_themed_prompt(
+    current_profile: Option<&str>,
+    warning: bool,
+    tangent_mode: bool,
+    theme_manager: Option<&ThemeManager>,
+) -> String {
+    if let Some(theme_manager) = theme_manager {
+        if let Some(theme) = theme_manager.get_active_theme() {
+            let renderer = ThemeRenderer::new(theme);
+            let git_info = detect_git_info();
+            return renderer.render_prompt(current_profile, warning, tangent_mode, Some(&git_info));
+        }
+    }
+
+    // Fallback to existing implementation
+    generate_prompt(current_profile, warning, tangent_mode)
+}
+
+/// Detect git information for the current directory
+fn detect_git_info() -> GitInfo {
+    let current_dir = env::current_dir().unwrap_or_else(|_| std::path::Path::new(".").to_path_buf());
+
+    // Use our themes crate git detection
+    let themes_git_info = themes::GitInfo::detect(&current_dir);
+
+    // Convert to the existing GitInfo format
+    GitInfo {
+        branch: themes_git_info.branch,
+        is_dirty: themes_git_info.status.is_some_and(|s| !s.clean),
+        is_repo: themes_git_info.is_repo,
+    }
 }
 
 /// Parse prompt components from a plain text prompt

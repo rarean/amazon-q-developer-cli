@@ -1,0 +1,137 @@
+use std::collections::HashMap;
+
+use super::bash_parser::BashParser;
+use super::{
+    BashTheme,
+    GitInfo,
+};
+
+pub struct ThemeRenderer<'a> {
+    theme: &'a BashTheme,
+}
+
+impl<'a> ThemeRenderer<'a> {
+    pub fn new(theme: &'a BashTheme) -> Self {
+        Self { theme }
+    }
+
+    /// Render a prompt using the theme
+    pub fn render_prompt(
+        &self,
+        agent: Option<&str>,
+        warning: bool,
+        tangent_mode: bool,
+        git_info: Option<&GitInfo>,
+    ) -> String {
+        let mut context_vars = self.build_context_variables(agent, warning, tangent_mode, git_info);
+
+        // Add theme variables
+        for (key, value) in &self.theme.variables {
+            context_vars.insert(key.clone(), value.clone());
+        }
+
+        BashParser::substitute_variables(&self.theme.prompt_template, &context_vars)
+    }
+
+    /// Build context variables for the current prompt state
+    fn build_context_variables(
+        &self,
+        agent: Option<&str>,
+        warning: bool,
+        tangent_mode: bool,
+        git_info: Option<&GitInfo>,
+    ) -> HashMap<String, String> {
+        let mut vars = HashMap::new();
+
+        // Core Q CLI variables
+        if let Some(agent_name) = agent {
+            vars.insert("Q_AGENT".to_string(), agent_name.to_string());
+        } else {
+            vars.insert("Q_AGENT".to_string(), String::new());
+        }
+
+        if warning {
+            vars.insert("Q_WARNING".to_string(), "1".to_string());
+        }
+
+        if tangent_mode {
+            vars.insert("Q_TANGENT".to_string(), "1".to_string());
+        }
+
+        // Git variables (if enabled and available)
+        if self.theme.git_enabled {
+            if let Some(git) = git_info {
+                if git.is_repo {
+                    if let Some(branch) = &git.branch {
+                        vars.insert("Q_GIT_BRANCH".to_string(), branch.clone());
+                    }
+                    vars.insert(
+                        "Q_GIT_STATUS".to_string(),
+                        if git.is_dirty { "dirty" } else { "clean" }.to_string(),
+                    );
+
+                    // Format git info using theme variables
+                    let git_info_str = self.format_git_info(git);
+                    vars.insert("Q_GIT_INFO".to_string(), git_info_str);
+                }
+            }
+        }
+
+        vars
+    }
+
+    /// Format git information using theme configuration
+    fn format_git_info(&self, git: &GitInfo) -> String {
+        if !git.is_repo {
+            return String::new();
+        }
+
+        let prefix = self.theme.get_variable("Q_GIT_PREFIX").map_or("", |s| s.as_str());
+        let suffix = self.theme.get_variable("Q_GIT_SUFFIX").map_or("", |s| s.as_str());
+        let branch = git.branch.as_deref().unwrap_or("unknown");
+
+        let status_symbol = if git.is_dirty {
+            self.theme
+                .get_variable("Q_GIT_DIRTY_SYMBOL")
+                .map_or("✗", |s| s.as_str())
+        } else {
+            self.theme
+                .get_variable("Q_GIT_CLEAN_SYMBOL")
+                .map_or("✓", |s| s.as_str())
+        };
+
+        format!("{}{} {}{}", prefix, branch, status_symbol, suffix)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_theme() -> BashTheme {
+        let mut theme = BashTheme::new("test".to_string());
+        theme.prompt_template = "$Q_AGENT_COLOR[$Q_AGENT]$RESET_COLOR $Q_PROMPT_SYMBOL ".to_string();
+        theme.set_variable("Q_AGENT_COLOR".to_string(), "\u{001b}[36m".to_string());
+        theme.set_variable("RESET_COLOR".to_string(), "\u{001b}[0m".to_string());
+        theme.set_variable("Q_PROMPT_SYMBOL".to_string(), ">".to_string());
+        theme
+    }
+
+    #[test]
+    fn test_render_basic_prompt() {
+        let theme = create_test_theme();
+        let renderer = ThemeRenderer::new(&theme);
+
+        let result = renderer.render_prompt(Some("test-agent"), false, false, None);
+        assert_eq!(result, "\u{001b}[36m[test-agent]\u{001b}[0m > ");
+    }
+
+    #[test]
+    fn test_render_prompt_no_agent() {
+        let theme = create_test_theme();
+        let renderer = ThemeRenderer::new(&theme);
+
+        let result = renderer.render_prompt(None, false, false, None);
+        assert_eq!(result, "\u{001b}[36m[]\u{001b}[0m > ");
+    }
+}

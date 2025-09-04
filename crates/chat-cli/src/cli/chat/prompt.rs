@@ -36,7 +36,6 @@ use rustyline::{
 };
 use winnow::stream::AsChar;
 
-pub use super::prompt_parser::generate_prompt;
 use super::prompt_parser::parse_prompt_components;
 use super::tool_manager::{
     PromptQuery,
