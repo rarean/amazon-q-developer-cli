@@ -47,11 +47,11 @@ impl<'a> ThemeRenderer<'a> {
         let mut vars = HashMap::new();
 
         // Core Q CLI variables
-        if let Some(agent_name) = agent {
-            vars.insert("Q_AGENT".to_string(), agent_name.to_string());
-        } else {
-            vars.insert("Q_AGENT".to_string(), String::new());
-        }
+        let agent_name = agent.unwrap_or("");
+        vars.insert("Q_AGENT".to_string(), agent_name.to_string());
+
+        // Standalone theme compatibility variables
+        vars.insert("AGENT".to_string(), agent.unwrap_or("default").to_string());
 
         if warning {
             vars.insert("Q_WARNING".to_string(), "1".to_string());
@@ -61,11 +61,14 @@ impl<'a> ThemeRenderer<'a> {
             vars.insert("Q_TANGENT".to_string(), "1".to_string());
         }
 
-        // Token usage variable
+        // Token usage variables
         if let Some(usage) = token_usage_percent {
             vars.insert("TOKEN_USAGE".to_string(), format!("({:.2}%)", usage));
+            // Standalone theme compatibility - just the number without parentheses
+            vars.insert("USAGE".to_string(), format!("{:.2}", usage));
         } else {
             vars.insert("TOKEN_USAGE".to_string(), String::new());
+            vars.insert("USAGE".to_string(), "0.00".to_string());
         }
 
         // Git variables (if enabled and available)
@@ -291,5 +294,57 @@ mod tests {
         assert!(!result.contains("("));
         assert!(!result.contains("%)"));
         assert!(result.contains("test-agent"));
+    }
+
+    #[test]
+    fn test_render_prompt_error_handling() {
+        let theme = create_test_theme();
+        let renderer = ThemeRenderer::new(&theme);
+
+        // Test with None agent (line 32)
+        let result = renderer.render_prompt(None, false, false, None, None);
+        assert!(result.contains("[]")); // Should handle None agent gracefully
+
+        // Test git info with None branch (line 57)
+        let mut git_theme = BashTheme::new("test".to_string());
+        git_theme.prompt_template = "${GIT_BRANCH:+($GIT_BRANCH)} > ".to_string();
+        git_theme.git_enabled = true;
+        let git_renderer = ThemeRenderer::new(&git_theme);
+
+        let git_info_no_branch = GitInfo {
+            branch: None,
+            is_dirty: false,
+            is_repo: true,
+        };
+
+        let result = git_renderer.render_prompt(None, false, false, Some(&git_info_no_branch), None);
+        // Should not show git info when branch is None
+        assert!(!result.contains("("));
+
+        // Test git variables with missing theme variables (lines 61, 66, 68)
+        let minimal_theme = BashTheme::new("minimal".to_string());
+        let minimal_renderer = ThemeRenderer::new(&minimal_theme);
+
+        let git_info = GitInfo {
+            branch: Some("main".to_string()),
+            is_dirty: true,
+            is_repo: true,
+        };
+
+        // This should not panic even when theme variables are missing
+        let _result = minimal_renderer.render_prompt(None, false, false, Some(&git_info), None);
+
+        // Test format_git_info with missing variables (lines 77, 79-80)
+        let git_info_str = minimal_renderer.format_git_info(&git_info);
+        assert!(git_info_str.contains("main")); // Should still contain branch name
+
+        // Test format_git_info with non-repo (line 136)
+        let non_repo = GitInfo {
+            branch: None,
+            is_dirty: false,
+            is_repo: false,
+        };
+        let empty_result = minimal_renderer.format_git_info(&non_repo);
+        assert_eq!(empty_result, "");
     }
 }
