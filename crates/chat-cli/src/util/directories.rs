@@ -221,6 +221,11 @@ pub fn knowledge_bases_dir(os: &Os) -> Result<PathBuf> {
     Ok(home_dir(os)?.join(".aws").join("amazonq").join("knowledge_bases"))
 }
 
+/// The directory for CLI themes storage
+pub fn chat_themes_dir(os: &Os) -> Result<PathBuf> {
+    Ok(home_dir(os)?.join(".aws").join("amazonq").join("themes"))
+}
+
 /// The directory for agent-specific knowledge base storage
 pub fn agent_knowledge_dir(os: &Os, agent: Option<&crate::cli::Agent>) -> Result<PathBuf> {
     let unique_id = if let Some(agent) = agent {

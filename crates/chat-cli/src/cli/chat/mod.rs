@@ -14,6 +14,7 @@ mod prompt_parser;
 mod server_messenger;
 #[cfg(unix)]
 mod skim_integration;
+pub mod themes;
 mod token_counter;
 pub mod tool_manager;
 pub mod tools;
@@ -598,6 +599,7 @@ pub struct ChatSession {
     interactive: bool,
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
+    theme_manager: Option<themes::ThemeManager>,
 }
 
 impl ChatSession {
@@ -688,6 +690,13 @@ impl ChatSession {
             }
         });
 
+        // Initialize theme manager
+        let mut theme_manager = themes::ThemeManager::new(os).ok();
+        if let Some(ref mut tm) = theme_manager {
+            let _ = tm.ensure_theme_directory(os).await;
+            let _ = tm.load_default_theme();
+        }
+
         Ok(Self {
             stdout,
             stderr,
@@ -708,6 +717,7 @@ impl ChatSession {
             interactive,
             inner: Some(ChatState::default()),
             ctrlc_rx,
+            theme_manager,
         })
     }
 
@@ -3071,7 +3081,14 @@ impl ChatSession {
         let profile = self.conversation.current_profile().map(|s| s.to_string());
         let all_trusted = self.all_tools_trusted();
         let tangent_mode = self.conversation.is_in_tangent_mode();
-        prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode)
+
+        // Use themed prompt if available, otherwise fallback to default
+        prompt_parser::generate_themed_prompt(
+            profile.as_deref(),
+            all_trusted,
+            tangent_mode,
+            self.theme_manager.as_ref(),
+        )
     }
 
     async fn send_tool_use_telemetry(&mut self, os: &Os) {
