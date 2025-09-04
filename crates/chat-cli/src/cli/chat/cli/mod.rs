@@ -18,6 +18,7 @@ pub mod prompts;
 pub mod reply;
 pub mod subscribe;
 pub mod tangent;
+pub mod themes;
 pub mod todos;
 pub mod tools;
 pub mod usage;
@@ -40,6 +41,7 @@ use profile::AgentSubcommand;
 use prompts::PromptsArgs;
 use reply::ReplyArgs;
 use tangent::TangentArgs;
+use themes::ThemesSubcommand;
 use todos::TodoSubcommand;
 use tools::ToolsArgs;
 
@@ -80,6 +82,9 @@ pub enum SlashCommand {
     /// (Beta) Manage custom commands. Requires "q settings chat.enableCommands true"
     #[command(subcommand, hide = true)]
     Commands(CommandsSubcommand), // NEW: Add Commands subcommand
+    /// (Beta) Manage prompt themes. Requires enabling themes experiment
+    #[command(subcommand, hide = true)]
+    Themes(ThemesSubcommand),
     /// Open $EDITOR (defaults to vi) to compose a prompt
     #[command(name = "editor")]
     PromptEditor(EditorArgs),
@@ -162,6 +167,7 @@ impl SlashCommand {
             Self::Context(args) => args.execute(os, session).await,
             Self::Knowledge(subcommand) => subcommand.execute(os, session).await,
             Self::Commands(subcommand) => subcommand.execute(os, session).await, // NEW: Add Commands execution
+            Self::Themes(subcommand) => subcommand.execute(os, session).await,
             Self::PromptEditor(args) => args.execute(session).await,
             Self::Reply(args) => args.execute(session).await,
             Self::Compact(args) => args.execute(os, session).await,
@@ -209,6 +215,7 @@ impl SlashCommand {
             Self::Context(_) => "context",
             Self::Knowledge(_) => "knowledge",
             Self::Commands(_) => "commands",
+            Self::Themes(_) => "themes",
             Self::PromptEditor(_) => "editor",
             Self::Reply(_) => "reply",
             Self::Compact(_) => "compact",

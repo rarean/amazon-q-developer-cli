@@ -89,6 +89,10 @@ pub enum Setting {
     EnabledCheckpoint,
     #[strum(message = "Enable the delegate tool for subagent management (boolean)")]
     EnabledDelegate,
+    #[strum(message = "Enable themes functionality (boolean)")]
+    EnabledThemes,
+    #[strum(message = "Current active theme name (string)")]
+    CurrentTheme,
 }
 
 impl AsRef<str> for Setting {
@@ -131,6 +135,8 @@ impl AsRef<str> for Setting {
             Self::EnabledCheckpoint => "chat.enableCheckpoint",
             Self::EnabledContextUsageIndicator => "chat.enableContextUsageIndicator",
             Self::EnabledDelegate => "chat.enableDelegate",
+            Self::EnabledThemes => "chat.enableThemes",
+            Self::CurrentTheme => "chat.currentTheme",
         }
     }
 }

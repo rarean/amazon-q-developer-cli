@@ -17,6 +17,7 @@ use crate::cli::chat::checkpoint::CHECKPOINT_MESSAGE_MAX_LENGTH;
 use crate::constants::ui_text;
 #[cfg(unix)]
 mod skim_integration;
+pub mod themes;
 mod token_counter;
 pub mod tool_manager;
 pub mod tools;
@@ -586,6 +587,9 @@ pub struct ChatSession {
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
     wrap: Option<WrapMode>,
+    theme_manager: Option<themes::ThemeManager>,
+    /// Current token usage percentage for display in themed prompts
+    token_usage_percent: Option<f32>,
 }
 
 impl ChatSession {
@@ -688,6 +692,13 @@ impl ChatSession {
             }
         });
 
+        // Initialize theme manager
+        let mut theme_manager = themes::ThemeManager::new(os).ok();
+        if let Some(ref mut tm) = theme_manager {
+            let _ = tm.ensure_theme_directory(os).await;
+            let _ = tm.load_default_theme();
+        }
+
         Ok(Self {
             stdout,
             stderr,
@@ -709,6 +720,8 @@ impl ChatSession {
             inner: Some(ChatState::default()),
             ctrlc_rx,
             wrap,
+            theme_manager,
+            token_usage_percent: None,
         })
     }
 
@@ -1894,6 +1907,15 @@ impl ChatSession {
         }
 
         execute!(self.stderr, StyledText::reset(), StyledText::reset_attributes())?;
+        execute!(
+            self.stderr,
+            style::SetForegroundColor(Color::Reset),
+            style::SetAttribute(Attribute::Reset)
+        )?;
+
+        // Update token usage for themed prompts
+        self.update_token_usage(os).await;
+
         let prompt = self.generate_tool_trust_prompt(os).await;
         let user_input = match self.read_user_input(&prompt, false) {
             Some(input) => input,
@@ -3490,6 +3512,31 @@ impl ChatSession {
         }
 
         generated_prompt
+        prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode, usage_percentage)
+
+        // Use themed prompt if available, otherwise fallback to default
+        prompt_parser::generate_themed_prompt(
+            profile.as_deref(),
+            all_trusted,
+            tangent_mode,
+            self.theme_manager.as_ref(),
+            self.token_usage_percent,
+        )
+    }
+
+    /// Update the token usage percentage for display in themed prompts
+    async fn update_token_usage(&mut self, os: &Os) {
+        if let Ok(state) = self
+            .conversation
+            .backend_conversation_state(os, false, &mut vec![])
+            .await
+        {
+            let data = state.calculate_conversation_size();
+            let total_tokens = (data.context_messages + data.user_messages + data.assistant_messages).value();
+            let context_window_size =
+                crate::cli::chat::cli::model::context_window_tokens(self.conversation.model_info.as_ref());
+            self.token_usage_percent = Some((total_tokens as f32 / context_window_size as f32) * 100.0);
+        }
     }
 
     async fn send_tool_use_telemetry(&mut self, os: &Os) {
