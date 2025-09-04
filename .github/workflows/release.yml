@@ -195,82 +195,6 @@ jobs:
             q-windows-binary.sha256
             q-windows-x86_64.zip.sha256
 
-  build-linux:
-    name: Build Linux
-    runs-on: ubuntu-latest
-    needs: [check-branch, determine-config]
-    if: needs.check-branch.outputs.should_release == 'true'
-    strategy:
-      matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-          - aarch64-unknown-linux-gnu
-          - x86_64-unknown-linux-musl
-          - aarch64-unknown-linux-musl
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cross-compilation tool
-        run: cargo install cross --git https://github.com/cross-rs/cross
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-${{ matrix.target }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Build for target
-        run: cross build --release --target ${{ matrix.target }} --bin chat_cli
-
-      - name: Create tar.gz package
-        run: |
-          mkdir -p "q-linux-${{ matrix.target }}"
-          cp "target/${{ matrix.target }}/release/chat_cli" "q-linux-${{ matrix.target }}/q"
-          chmod +x "q-linux-${{ matrix.target }}/q"
-          cp README.md LICENSE.MIT LICENSE.APACHE "q-linux-${{ matrix.target }}/"
-          
-          cat > "q-linux-${{ matrix.target }}/INSTALL.txt" << 'EOF'
-          Amazon Q CLI Linux Installation Instructions
-          
-          ### System Installation (Recommended)
-          1. Extract: tar -xzf q-linux-${{ matrix.target }}.tar.gz
-          2. Install: sudo mv q-linux-${{ matrix.target }}/q /usr/local/bin/
-          3. Test: q --version
-          
-          ### User Installation
-          1. Extract: tar -xzf q-linux-${{ matrix.target }}.tar.gz
-          2. Move to user bin: mkdir -p ~/.local/bin && mv q-linux-${{ matrix.target }}/q ~/.local/bin/
-          3. Add to PATH: echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-          4. Reload shell: source ~/.bashrc
-          5. Test: q --version
-          
-          For more information: https://github.com/aws/amazon-q-developer-cli
-          EOF
-          
-          tar -czf "q-linux-${{ matrix.target }}.tar.gz" "q-linux-${{ matrix.target }}"
-
-      - name: Generate checksums
-        run: |
-          sha256sum "target/${{ matrix.target }}/release/chat_cli" > "q-linux-${{ matrix.target }}-binary.sha256"
-          sha256sum "q-linux-${{ matrix.target }}.tar.gz" > "q-linux-${{ matrix.target }}.tar.gz.sha256"
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-${{ matrix.target }}-artifacts
-          path: |
-            q-linux-${{ matrix.target }}.tar.gz
-            q-linux-${{ matrix.target }}-binary.sha256
-            q-linux-${{ matrix.target }}.tar.gz.sha256
-
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
@@ -312,7 +236,7 @@ jobs:
           
           ### macOS
           - **Universal Binary**: Works on both Intel and Apple Silicon Macs
-          - **Package**: \`Amazon-Q-CLI-universal.dmg\` (drag-and-drop installation)
+          - **Package**: \`$([ "$IS_ALPHA" = "true" ] && echo "Amazon-Q-CLI-Alpha-universal.dmg" || echo "Amazon-Q-CLI-universal.dmg")\` (drag-and-drop installation)
           - **Installation**: Double-click DMG, drag to Applications, right-click → Open (first time)
           
           ### Windows
@@ -320,35 +244,25 @@ jobs:
           - **Package**: \`q-windows-x86_64.zip\`
           - **Installation**: Extract ZIP, add to PATH, handle SmartScreen warning
           
-          ### Linux
-          - **x86_64-unknown-linux-gnu**: Standard Intel/AMD 64-bit (glibc)
-          - **aarch64-unknown-linux-gnu**: ARM 64-bit (glibc) - Raspberry Pi 4+, ARM servers
-          - **x86_64-unknown-linux-musl**: Portable Intel/AMD 64-bit (static linking)
-          - **aarch64-unknown-linux-musl**: Portable ARM 64-bit (static linking)
-          - **Installation**: Extract tar.gz, move to /usr/local/bin or ~/.local/bin
-          
           ## Security & Verification
           
           All packages include SHA256 checksums for verification:
           
           \`\`\`bash
           # macOS
-          shasum -a 256 Amazon-Q-CLI-universal.dmg
+          shasum -a 256 $([ "$IS_ALPHA" = "true" ] && echo "Amazon-Q-CLI-Alpha-universal.dmg" || echo "Amazon-Q-CLI-universal.dmg")
           
           # Windows
           certutil -hashfile q-windows-x86_64.zip SHA256
-          
-          # Linux
-          sha256sum q-linux-{target}.tar.gz
           \`\`\`
           
           ## Installation Quick Start
           
           ### macOS
-          1. Download \`Amazon-Q-CLI-universal.dmg\`
+          1. Download \`$([ "$IS_ALPHA" = "true" ] && echo "Amazon-Q-CLI-Alpha-universal.dmg" || echo "Amazon-Q-CLI-universal.dmg")\`
           2. Double-click to mount, drag to Applications
           3. Right-click → Open (bypass Gatekeeper)
-          4. Run: \`q --version\`
+          4. Run: \`$([ "$IS_ALPHA" = "true" ] && echo "q-alpha --version" || echo "q --version")\`
           
           ### Windows
           1. Download \`q-windows-x86_64.zip\`
@@ -356,27 +270,6 @@ jobs:
           3. Add directory to PATH
           4. Handle SmartScreen warning (More info → Run anyway)
           5. Run: \`q --version\`
-          
-          ### Linux
-          1. Choose your architecture package
-          2. \`tar -xzf q-linux-{target}.tar.gz\`
-          3. \`sudo mv q-linux-{target}/q /usr/local/bin/\`
-          4. Run: \`q --version\`
-          
-          ## Architecture Selection Guide (Linux)
-          
-          - **x86_64-unknown-linux-gnu**: Most common - standard Linux distributions
-          - **aarch64-unknown-linux-gnu**: ARM 64-bit systems (Raspberry Pi 4+, ARM servers)
-          - **x86_64-unknown-linux-musl**: Maximum portability, works everywhere
-          - **aarch64-unknown-linux-musl**: ARM 64-bit with maximum portability
-          
-          ## Security Notice
-          
-          These packages are **unsigned** but safe to use:
-          - ✅ **Verify checksums** before installation
-          - ✅ **Download only** from official GitHub releases
-          - ✅ **Review build logs** in GitHub Actions for transparency
-          - ✅ **Source code** is fully open and auditable
           
           ## Support
           
@@ -397,7 +290,6 @@ jobs:
           files: |
             *.dmg
             *.zip
-            *.tar.gz
             *.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
