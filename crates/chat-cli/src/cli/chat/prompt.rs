@@ -688,7 +688,7 @@ mod tests {
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true),
+            hinter: ChatHinter::new(true, PathBuf::new()),
             validator: MultiLineValidator,
         };
 
