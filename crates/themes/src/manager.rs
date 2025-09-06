@@ -243,11 +243,16 @@ mod tests {
             "Result should contain agent and usage info: {}",
             result
         );
-        assert!(
-            result.contains("develop"),
-            "Result should contain git branch: {}",
-            result
-        );
+        // Check if we're in a git repository and have a branch
+        let git_info = crate::git::GitInfo::detect(std::env::current_dir().unwrap().as_path());
+        if let Some(branch) = git_info.branch {
+            assert!(
+                result.contains(&branch),
+                "Result should contain git branch '{}': {}",
+                branch,
+                result
+            );
+        }
         assert!(result.ends_with(" "), "Result should end with space: {}", result);
 
         // Should contain powerline separator character
