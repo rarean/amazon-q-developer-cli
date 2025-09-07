@@ -74,7 +74,8 @@ impl ThemeArgs {
                             // Try to render a test prompt to validate
                             let renderer = ThemeRenderer::new(theme);
                             let git_info = detect_git_info();
-                            let _rendered = renderer.render_prompt(Some("test"), false, false, Some(&git_info), None);
+                            let _rendered =
+                                renderer.render_prompt(Some("test"), false, false, Some(&git_info), None, None);
                             println!("Theme '{}' is valid", name);
                         } else {
                             eprintln!("Theme '{}' failed to load", name);
@@ -90,8 +91,14 @@ impl ThemeArgs {
                     if let Some(theme) = manager.get_active_theme() {
                         let renderer = ThemeRenderer::new(theme);
                         let git_info = detect_git_info();
-                        let rendered =
-                            renderer.render_prompt(Some("q_cli_default"), false, false, Some(&git_info), Some(48.35));
+                        let rendered = renderer.render_prompt(
+                            Some("q_cli_default"),
+                            false,
+                            false,
+                            Some(&git_info),
+                            Some(48.35),
+                            None,
+                        );
                         println!("Preview of theme '{}':", name);
                         print!("{}", rendered);
                     } else {
@@ -118,7 +125,7 @@ impl ThemeArgs {
                     let renderer = ThemeRenderer::new(theme);
                     let git_info = detect_git_info_for_path(&target_path);
                     let rendered =
-                        renderer.render_prompt(Some("q_cli_default"), false, false, Some(&git_info), Some(48.35));
+                        renderer.render_prompt(Some("q_cli_default"), false, false, Some(&git_info), Some(48.35), None);
                     println!("Context-aware prompt for {:?}:", target_path);
                     print!("{}", rendered);
                 } else {

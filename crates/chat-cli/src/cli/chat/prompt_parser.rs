@@ -22,6 +22,7 @@ pub fn generate_themed_prompt(
     tangent_mode: bool,
     theme_manager: Option<&ThemeManager>,
     token_usage_percent: Option<f32>,
+    model_name: Option<&str>,
 ) -> String {
     if let Some(theme_manager) = theme_manager {
         if let Some(theme) = theme_manager.get_active_theme() {
@@ -33,6 +34,7 @@ pub fn generate_themed_prompt(
                 tangent_mode,
                 Some(&git_info),
                 token_usage_percent,
+                model_name,
             );
         }
     }

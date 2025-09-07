@@ -58,7 +58,7 @@ mod tests {
         theme.set_variable("RESET_COLOR".to_string(), "\u{001b}[0m".to_string());
 
         let renderer = ThemeRenderer::new(&theme);
-        let result = renderer.render_prompt(Some("test"), false, false, None, None);
+        let result = renderer.render_prompt(Some("test"), false, false, None, None, None);
 
         // Should contain ANSI escape sequences and the agent name
         assert!(result.contains("[test]"));
