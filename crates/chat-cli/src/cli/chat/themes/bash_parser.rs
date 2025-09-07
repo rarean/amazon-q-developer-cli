@@ -500,11 +500,11 @@ PROMPT="$Q_AGENT_COLOR[$Q_AGENT]$RESET_COLOR > ""#;
     #[test]
     fn test_powerline_theme_format() {
         // Test the powerline theme template
-        let template = "agent:[${AGENT}] usage:(${USAGE}%) ${GIT_BRANCH:+git:(${GIT_BRANCH})}> ";
+        let template = "agent:[${AGENT}] usage:${TOKEN_USAGE} ${GIT_BRANCH:+git:(${GIT_BRANCH})}> ";
 
         let mut vars = HashMap::new();
         vars.insert("AGENT".to_string(), "default".to_string());
-        vars.insert("USAGE".to_string(), "48.35".to_string());
+        vars.insert("TOKEN_USAGE".to_string(), "(48.35%)".to_string());
         vars.insert("GIT_BRANCH".to_string(), "develop".to_string());
 
         let result = BashParser::substitute_variables(template, &vars);

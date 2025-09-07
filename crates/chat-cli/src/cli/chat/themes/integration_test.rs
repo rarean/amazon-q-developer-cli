@@ -14,13 +14,13 @@ mod tests {
         let mut theme_manager = ThemeManager::new(&os).unwrap();
 
         // Test fallback when no theme is loaded
-        let prompt = generate_themed_prompt(Some("test"), false, false, Some(&theme_manager), None);
+        let prompt = generate_themed_prompt(Some("test"), false, false, Some(&theme_manager), None, None);
         assert_eq!(prompt, "[test] > ");
 
         // Test with theme loaded (if default.theme exists)
         let _ = theme_manager.load_theme("default");
         if theme_manager.get_active_theme().is_some() {
-            let themed_prompt = generate_themed_prompt(Some("test"), false, false, Some(&theme_manager), None);
+            let themed_prompt = generate_themed_prompt(Some("test"), false, false, Some(&theme_manager), None, None);
             // Should contain ANSI color codes if theme is loaded
             assert!(themed_prompt.contains("\u{001b}[36m") || themed_prompt == "[test] > ");
         }
@@ -45,7 +45,7 @@ mod tests {
         manager.load_theme("minimal").expect("Should load minimal theme");
         let minimal_theme = manager.get_active_theme().expect("Should have active theme");
         let minimal_renderer = ThemeRenderer::new(minimal_theme);
-        let minimal_prompt = minimal_renderer.render_prompt(None, false, false, None, None);
+        let minimal_prompt = minimal_renderer.render_prompt(None, false, false, None, None, None);
 
         // Load powerline theme
         manager.load_theme("powerline").expect("Should load powerline theme");
@@ -61,6 +61,7 @@ mod tests {
                 is_repo: true,
             }),
             Some(50.0),
+            None,
         );
 
         // Verify the prompts are different
@@ -74,7 +75,10 @@ mod tests {
 
         // Verify powerline theme characteristics
         assert!(powerline_prompt.contains("default"), "Powerline should contain agent");
-        assert!(powerline_prompt.contains("50"), "Powerline should contain usage");
+        assert!(
+            powerline_prompt.contains("(50.00%)"),
+            "Powerline should contain usage in TOKEN_USAGE format"
+        );
         assert!(powerline_prompt.contains("main"), "Powerline should contain git branch");
         assert!(
             powerline_prompt.contains("\u{e0b0}"),
@@ -98,7 +102,7 @@ mod tests {
         let minimal_prompt = manager
             .get_active_theme()
             .map(|theme| {
-                ThemeRenderer::new(theme).render_prompt(Some("test"), false, false, Some(&git_info), Some(25.0))
+                ThemeRenderer::new(theme).render_prompt(Some("test"), false, false, Some(&git_info), Some(25.0), None)
             })
             .unwrap_or_default();
 
@@ -107,7 +111,7 @@ mod tests {
         let powerline_prompt = manager
             .get_active_theme()
             .map(|theme| {
-                ThemeRenderer::new(theme).render_prompt(Some("test"), false, false, Some(&git_info), Some(25.0))
+                ThemeRenderer::new(theme).render_prompt(Some("test"), false, false, Some(&git_info), Some(25.0), None)
             })
             .unwrap_or_default();
 
@@ -118,7 +122,7 @@ mod tests {
         let git_prompt = manager
             .get_active_theme()
             .map(|theme| {
-                ThemeRenderer::new(theme).render_prompt(Some("test"), false, false, Some(&git_info), Some(25.0))
+                ThemeRenderer::new(theme).render_prompt(Some("test"), false, false, Some(&git_info), Some(25.0), None)
             })
             .unwrap_or_default();
 
@@ -154,7 +158,7 @@ mod tests {
             is_repo: true,
         };
 
-        let prompt = renderer.render_prompt(Some("default"), false, false, Some(&git_info), None);
+        let prompt = renderer.render_prompt(Some("default"), false, false, Some(&git_info), None, None);
 
         println!("Git-enabled theme prompt: {:?}", prompt);
         println!("Git-enabled theme prompt (display): {}", prompt);

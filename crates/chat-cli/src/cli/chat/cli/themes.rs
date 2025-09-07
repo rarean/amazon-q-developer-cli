@@ -372,8 +372,8 @@ mod tests {
                 "Powerline theme should contain AGENT variable"
             );
             assert!(
-                template.contains("${USAGE}"),
-                "Powerline theme should contain USAGE variable"
+                template.contains("${TOKEN_USAGE}") || template.contains("$TOKEN_USAGE"),
+                "Powerline theme should contain TOKEN_USAGE variable"
             );
             assert!(
                 template.contains("${GIT_BRANCH"),

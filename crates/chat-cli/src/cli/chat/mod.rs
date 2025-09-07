@@ -3107,6 +3107,10 @@ impl ChatSession {
             tangent_mode,
             self.theme_manager.as_ref(),
             self.token_usage_percent,
+            self.conversation
+                .model_info
+                .as_ref()
+                .and_then(|m| m.model_name.as_deref()),
         )
     }
 
@@ -3118,7 +3122,15 @@ impl ChatSession {
             .await
         {
             let data = state.calculate_conversation_size();
-            let total_tokens = (data.context_messages + data.user_messages + data.assistant_messages).value();
+            let tool_specs_json: String = state
+                .tools
+                .values()
+                .filter_map(|s| serde_json::to_string(s).ok())
+                .collect::<Vec<String>>()
+                .join("");
+            let tools_char_count: crate::cli::chat::token_counter::CharCount = tool_specs_json.len().into();
+            let total_tokens =
+                (data.context_messages + data.user_messages + data.assistant_messages + tools_char_count).value();
             let context_window_size =
                 crate::cli::chat::cli::model::context_window_tokens(self.conversation.model_info.as_ref());
             self.token_usage_percent = Some((total_tokens as f32 / context_window_size as f32) * 100.0);

@@ -13,11 +13,11 @@ impl ThemeManager {
         builtin_themes.insert("minimal".to_string(), "> ");
         builtin_themes.insert(
             "powerline".to_string(),
-            "\x1b[44m\x1b[37m ${AGENT} \x1b[0m\x1b[45m\x1b[34m\u{e0b0}\x1b[37m ${USAGE}% \x1b[0m${GIT_BRANCH:+\x1b[43m\x1b[35m\u{e0b0}\x1b[30m ${GIT_BRANCH} \x1b[0m\x1b[33m\u{e0b0}}\x1b[0m ",
+            "\x1b[44m\x1b[37m ${AGENT} \x1b[0m\x1b[45m\x1b[34m\u{e0b0}\x1b[37m $TOKEN_USAGE \x1b[0m${GIT_BRANCH:+\x1b[43m\x1b[35m\u{e0b0}\x1b[30m ${GIT_BRANCH} \x1b[0m\x1b[33m\u{e0b0}}\x1b[0m ",
         );
         builtin_themes.insert(
             "git-enabled".to_string(),
-            "${GREEN}➜ ${GIT_BRANCH:+${BOLD}git:(${YELLOW}${GIT_BRANCH}${RESET}${GREEN}${BOLD})${RESET} }> ",
+            "${BOLD}${MAGENTA}➜ ${MODEL}:$TOKEN_USAGE${RESET} ${GIT_BRANCH:+${GREEN}${BOLD}git:(${YELLOW}${GIT_BRANCH}${RESET}${GREEN}${BOLD})${RESET} }> ",
         );
 
         Self { builtin_themes }
@@ -125,13 +125,26 @@ mod tests {
         // Load the git-enabled theme
         let template = manager.load_theme("git-enabled").unwrap();
 
-        // Create a renderer and render the template
+        // Create a renderer and render the template with mock data
         let renderer = ThemeRenderer::new();
-        let result = renderer.render_prompt(&template);
+
+        // Mock the template with test values
+        let test_template = template
+            .replace("${MODEL}", "claude-3-5-sonnet")
+            .replace("$TOKEN_USAGE", "(25.50%)");
+
+        let result = renderer.render_prompt(&test_template);
 
         // Should contain the basic prompt structure
         assert!(result.contains("➜"), "Result should contain arrow symbol: {}", result);
         assert!(result.ends_with("> "), "Result should end with '> ': {}", result);
+
+        // Should contain the mocked values
+        assert!(
+            result.contains("claude-3-5-sonnet") && result.contains("(25.50%)"),
+            "Result should contain model and usage info: {}",
+            result
+        );
 
         // Verify variables are properly substituted, not displayed as literals
         assert!(
@@ -233,13 +246,15 @@ mod tests {
         let renderer = ThemeRenderer::new();
 
         // Mock the template with test values
-        let test_template = template.replace("${AGENT}", "default").replace("${USAGE}", "48");
+        let test_template = template
+            .replace("${AGENT}", "default")
+            .replace("$TOKEN_USAGE", "(48.00%)");
 
         let result = renderer.render_prompt(&test_template);
 
         // Should contain the expected segmented format
         assert!(
-            result.contains("default") && result.contains("48%"),
+            result.contains("default") && result.contains("(48.00%)"),
             "Result should contain agent and usage info: {}",
             result
         );
