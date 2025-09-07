@@ -23,9 +23,10 @@ impl<'a> ThemeRenderer<'a> {
         tangent_mode: bool,
         git_info: Option<&GitInfo>,
         token_usage_percent: Option<f32>,
+        model_name: Option<&str>,
     ) -> String {
         let mut context_vars =
-            self.build_context_variables(agent, warning, tangent_mode, git_info, token_usage_percent);
+            self.build_context_variables(agent, warning, tangent_mode, git_info, token_usage_percent, model_name);
 
         // Add theme variables
         for (key, value) in &self.theme.variables {
@@ -43,6 +44,7 @@ impl<'a> ThemeRenderer<'a> {
         tangent_mode: bool,
         git_info: Option<&GitInfo>,
         token_usage_percent: Option<f32>,
+        model_name: Option<&str>,
     ) -> HashMap<String, String> {
         let mut vars = HashMap::new();
 
@@ -64,12 +66,12 @@ impl<'a> ThemeRenderer<'a> {
         // Token usage variables
         if let Some(usage) = token_usage_percent {
             vars.insert("TOKEN_USAGE".to_string(), format!("({:.2}%)", usage));
-            // Standalone theme compatibility - just the number without parentheses
-            vars.insert("USAGE".to_string(), format!("{:.2}", usage));
         } else {
             vars.insert("TOKEN_USAGE".to_string(), String::new());
-            vars.insert("USAGE".to_string(), "0.00".to_string());
         }
+
+        // Model variable
+        vars.insert("MODEL".to_string(), model_name.unwrap_or("unknown").to_string());
 
         // Git variables (if enabled and available)
         if self.theme.git_enabled {
@@ -172,7 +174,7 @@ mod tests {
         let theme = create_test_theme();
         let renderer = ThemeRenderer::new(&theme);
 
-        let result = renderer.render_prompt(Some("test-agent"), false, false, None, None);
+        let result = renderer.render_prompt(Some("test-agent"), false, false, None, None, None);
         assert_eq!(result, "\u{001b}[36m[test-agent]\u{001b}[0m > ");
     }
 
@@ -181,7 +183,7 @@ mod tests {
         let theme = create_test_theme();
         let renderer = ThemeRenderer::new(&theme);
 
-        let result = renderer.render_prompt(None, false, false, None, None);
+        let result = renderer.render_prompt(None, false, false, None, None, None);
         assert_eq!(result, "\u{001b}[36m[]\u{001b}[0m > ");
     }
 
@@ -203,7 +205,7 @@ mod tests {
             is_repo: true,
         };
 
-        let result = renderer.render_prompt(Some("test-agent"), false, false, Some(&git_info), None);
+        let result = renderer.render_prompt(Some("test-agent"), false, false, Some(&git_info), None, None);
 
         // Should contain the git branch and clean symbol
         assert!(result.contains("main"));
@@ -229,7 +231,7 @@ mod tests {
             is_repo: true,
         };
 
-        let result = renderer.render_prompt(Some("test-agent"), false, false, Some(&git_info), None);
+        let result = renderer.render_prompt(Some("test-agent"), false, false, Some(&git_info), None, None);
 
         // Should contain the git branch and dirty symbol
         assert!(result.contains("feature"));
@@ -253,7 +255,7 @@ mod tests {
             is_repo: false,
         };
 
-        let result = renderer.render_prompt(Some("test-agent"), false, false, Some(&git_info), None);
+        let result = renderer.render_prompt(Some("test-agent"), false, false, Some(&git_info), None, None);
 
         // Should not contain git information when not in a repo
         assert!(!result.contains("("));
@@ -271,7 +273,7 @@ mod tests {
         };
 
         let renderer = ThemeRenderer::new(&theme);
-        let result = renderer.render_prompt(Some("test-agent"), false, false, None, Some(48.35));
+        let result = renderer.render_prompt(Some("test-agent"), false, false, None, Some(48.35), None);
 
         // Should contain the token usage percentage
         assert!(result.contains("(48.35%)"));
@@ -288,7 +290,7 @@ mod tests {
         };
 
         let renderer = ThemeRenderer::new(&theme);
-        let result = renderer.render_prompt(Some("test-agent"), false, false, None, None);
+        let result = renderer.render_prompt(Some("test-agent"), false, false, None, None, None);
 
         // Should not contain token usage when not provided
         assert!(!result.contains("("));
@@ -302,7 +304,7 @@ mod tests {
         let renderer = ThemeRenderer::new(&theme);
 
         // Test with None agent (line 32)
-        let result = renderer.render_prompt(None, false, false, None, None);
+        let result = renderer.render_prompt(None, false, false, None, None, None);
         assert!(result.contains("[]")); // Should handle None agent gracefully
 
         // Test git info with None branch (line 57)
@@ -317,7 +319,7 @@ mod tests {
             is_repo: true,
         };
 
-        let result = git_renderer.render_prompt(None, false, false, Some(&git_info_no_branch), None);
+        let result = git_renderer.render_prompt(None, false, false, Some(&git_info_no_branch), None, None);
         // Should not show git info when branch is None
         assert!(!result.contains("("));
 
@@ -332,7 +334,7 @@ mod tests {
         };
 
         // This should not panic even when theme variables are missing
-        let _result = minimal_renderer.render_prompt(None, false, false, Some(&git_info), None);
+        let _result = minimal_renderer.render_prompt(None, false, false, Some(&git_info), None, None);
 
         // Test format_git_info with missing variables (lines 77, 79-80)
         let git_info_str = minimal_renderer.format_git_info(&git_info);
