@@ -17,7 +17,7 @@ impl ThemeManager {
         );
         builtin_themes.insert(
             "git-enabled".to_string(),
-            "${BOLD}${MAGENTA}➜ ${MODEL}:$TOKEN_USAGE${RESET} ${GIT_BRANCH:+${GREEN}${BOLD}git:(${YELLOW}${GIT_BRANCH}${RESET}${GREEN}${BOLD})${RESET} }> ",
+            "${BOLD}${MAGENTA}➜ ${MODEL}:$TOKEN_USAGE${RESET} ${GREEN}${BOLD}${PWD}${GIT_BRANCH:+:(${YELLOW}${GIT_BRANCH}${RESET}${GREEN}${BOLD})${RESET} }> ",
         );
 
         Self { builtin_themes }

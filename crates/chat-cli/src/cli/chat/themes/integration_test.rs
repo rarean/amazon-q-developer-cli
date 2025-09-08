@@ -168,14 +168,15 @@ mod tests {
         assert!(!prompt.contains("${RESET}"), "Should not contain literal ${{RESET}}");
         assert!(!prompt.contains("${BLUE}"), "Should not contain literal ${{BLUE}}");
         assert!(!prompt.contains("${YELLOW}"), "Should not contain literal ${{YELLOW}}");
+        assert!(!prompt.contains("${PWD}"), "Should not contain literal ${{PWD}}");
 
         // Verify expected content is present
         assert!(prompt.contains("➜"), "Should contain arrow symbol");
 
         // Check for git branch info (accounting for color codes)
         assert!(
-            prompt.contains("git:(") && prompt.contains("develop") && prompt.contains(")"),
-            "Should contain git branch info with develop branch"
+            prompt.contains(":(") && prompt.contains("develop") && prompt.contains(")"),
+            "Should contain PWD and git branch info with develop branch"
         );
 
         assert!(prompt.ends_with("> "), "Should end with prompt symbol");

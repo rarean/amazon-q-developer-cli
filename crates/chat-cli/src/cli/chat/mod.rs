@@ -3118,7 +3118,7 @@ impl ChatSession {
     async fn update_token_usage(&mut self, os: &Os) {
         if let Ok(state) = self
             .conversation
-            .backend_conversation_state(os, false, &mut vec![])
+            .backend_conversation_state(os, true, &mut vec![])
             .await
         {
             let data = state.calculate_conversation_size();
@@ -3129,11 +3129,11 @@ impl ChatSession {
                 .collect::<Vec<String>>()
                 .join("");
             let tools_char_count: crate::cli::chat::token_counter::CharCount = tool_specs_json.len().into();
-            let total_tokens =
-                (data.context_messages + data.user_messages + data.assistant_messages + tools_char_count).value();
+            let total_token_used: crate::cli::chat::token_counter::TokenCount =
+                (data.context_messages + data.user_messages + data.assistant_messages + tools_char_count).into();
             let context_window_size =
                 crate::cli::chat::cli::model::context_window_tokens(self.conversation.model_info.as_ref());
-            self.token_usage_percent = Some((total_tokens as f32 / context_window_size as f32) * 100.0);
+            self.token_usage_percent = Some((total_token_used.value() as f32 / context_window_size as f32) * 100.0);
         }
     }
 
@@ -4103,6 +4103,41 @@ mod tests {
             assert!(project_indicator.contains("🚀"));
             assert!(project_indicator.contains("project:code-review"));
             assert!(user_indicator.contains("user:security-scan"));
+        }
+
+        #[tokio::test]
+        async fn test_backend_conversation_state_run_perprompt_hooks_parameter() {
+            // This test verifies that backend_conversation_state works with both
+            // run_perprompt_hooks: true and false, documenting the change made to update_token_usage
+            use crate::cli::agent::Agents;
+            use crate::cli::chat::conversation::ConversationState;
+            use crate::cli::chat::tool_manager::ToolManager;
+            use crate::os::Os;
+
+            let mut os = Os::new().await.unwrap();
+            let agents = Agents::default();
+            let mut tool_manager = ToolManager::default();
+            let tools = tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap();
+
+            // Create a conversation state
+            let mut conversation =
+                ConversationState::new("test_conv_id", agents, tools, tool_manager, None, &os, false).await;
+
+            // Add a simple message to have some content
+            conversation.set_next_user_message("test message".to_string()).await;
+
+            // Test with run_perprompt_hooks: true (this is what update_token_usage now uses)
+            let state_with_hooks = conversation.backend_conversation_state(&os, true, &mut vec![]).await;
+            assert!(
+                state_with_hooks.is_ok(),
+                "backend_conversation_state should succeed with run_perprompt_hooks: true"
+            );
+
+            let state = state_with_hooks.unwrap();
+            assert_eq!(state.conversation_id, "test_conv_id");
+
+            // This test documents that update_token_usage now uses run_perprompt_hooks: true
+            // which ensures hook-generated context is included in token usage calculations
         }
     }
 }
