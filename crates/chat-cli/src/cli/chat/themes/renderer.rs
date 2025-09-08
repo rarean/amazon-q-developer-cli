@@ -73,6 +73,20 @@ impl<'a> ThemeRenderer<'a> {
         // Model variable
         vars.insert("MODEL".to_string(), model_name.unwrap_or("unknown").to_string());
 
+        // PWD variable (current working directory with ~ substitution)
+        let current_dir = std::env::current_dir().unwrap_or_else(|_| std::path::Path::new(".").to_path_buf());
+        let pwd = if let Some(home) = std::env::var_os("HOME") {
+            let home_path = std::path::Path::new(&home);
+            if let Ok(relative) = current_dir.strip_prefix(home_path) {
+                format!("~/{}", relative.display())
+            } else {
+                current_dir.to_string_lossy().to_string()
+            }
+        } else {
+            current_dir.to_string_lossy().to_string()
+        };
+        vars.insert("PWD".to_string(), pwd);
+
         // Git variables (if enabled and available)
         if self.theme.git_enabled {
             if let Some(git) = git_info {

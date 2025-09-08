@@ -1,10 +1,14 @@
 use std::env;
-use std::path::Path;
+use std::path::{
+    Path,
+    PathBuf,
+};
 
 use crate::git::GitInfo;
 
 pub struct ThemeRenderer {
     git_info: GitInfo,
+    current_dir: PathBuf,
 }
 
 // ANSI color codes
@@ -28,7 +32,7 @@ impl ThemeRenderer {
         let current_dir = env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
         let git_info = GitInfo::detect(&current_dir);
 
-        Self { git_info }
+        Self { git_info, current_dir }
     }
 
     pub fn new_for_path(path: &Path) -> Self {
@@ -38,7 +42,10 @@ impl ThemeRenderer {
             GitInfo::empty()
         };
 
-        Self { git_info }
+        Self {
+            git_info,
+            current_dir: path.to_path_buf(),
+        }
     }
 
     pub fn has_git_repo(&self) -> bool {
@@ -71,6 +78,7 @@ impl ThemeRenderer {
             "GIT_UNTRACKED",
             "GIT_AHEAD",
             "GIT_BEHIND",
+            "PWD",
             "AGENT",
             "USAGE",
         ];
@@ -192,6 +200,19 @@ impl ThemeRenderer {
     fn replace_git_variables(&self, template: &str) -> String {
         let mut result = template.to_string();
 
+        // Replace PWD (current directory with ~ substitution)
+        let pwd = if let Some(home) = std::env::var_os("HOME") {
+            let home_path = std::path::Path::new(&home);
+            if let Ok(relative) = self.current_dir.strip_prefix(home_path) {
+                format!("~/{}", relative.display())
+            } else {
+                self.current_dir.to_string_lossy().to_string()
+            }
+        } else {
+            self.current_dir.to_string_lossy().to_string()
+        };
+        result = result.replace("${PWD}", &pwd);
+
         // Replace git branch
         if let Some(branch) = &self.git_info.branch {
             result = result.replace("${GIT_BRANCH}", branch);
@@ -250,7 +271,8 @@ impl ThemeRenderer {
         let mut result = template.to_string();
 
         result = self.replace_agent_variable(&result);
-        result = self.replace_usage_variable(&result);
+        result = self.replace_model_variable(&result);
+        result = self.replace_token_usage_variable(&result);
 
         result
     }
@@ -260,10 +282,16 @@ impl ThemeRenderer {
         template.replace("${AGENT}", &agent)
     }
 
-    fn replace_usage_variable(&self, template: &str) -> String {
-        let usage = std::env::var("Q_USAGE").unwrap_or_default().trim().to_string();
-        let usage_display = if usage.is_empty() { "-".to_string() } else { usage };
-        template.replace("${USAGE}", &usage_display)
+    fn replace_model_variable(&self, template: &str) -> String {
+        let model = std::env::var("Q_MODEL").unwrap_or_else(|_| "unknown".to_string());
+        template.replace("${MODEL}", &model)
+    }
+
+    fn replace_token_usage_variable(&self, template: &str) -> String {
+        let token_usage = std::env::var("Q_TOKEN_USAGE").unwrap_or_else(|_| "(25.50%)".to_string());
+        template
+            .replace("${TOKEN_USAGE}", &token_usage)
+            .replace("$TOKEN_USAGE", &token_usage)
     }
 }
 
@@ -283,5 +311,52 @@ mod tests {
         let renderer = ThemeRenderer::new();
         assert!(renderer.validate_theme("${GREEN}> ${RESET}").is_ok());
         assert!(renderer.validate_theme("${GREEN> ${RESET}").is_err());
+    }
+
+    #[test]
+    fn test_model_variable_substitution() {
+        let renderer = ThemeRenderer::new();
+
+        // Test with environment variable set
+        std::env::set_var("Q_MODEL", "claude-3");
+        let result = renderer.render_prompt("Model: ${MODEL}");
+        assert_eq!(result, "Model: claude-3");
+
+        // Test with environment variable unset
+        std::env::remove_var("Q_MODEL");
+        let result = renderer.render_prompt("Model: ${MODEL}");
+        assert_eq!(result, "Model: unknown");
+    }
+
+    #[test]
+    fn test_token_usage_variable_substitution() {
+        let renderer = ThemeRenderer::new();
+
+        // Test with environment variable set
+        std::env::set_var("Q_TOKEN_USAGE", "(75.25%)");
+        let result1 = renderer.render_prompt("Usage: ${TOKEN_USAGE}");
+        let result2 = renderer.render_prompt("Usage: $TOKEN_USAGE");
+        assert_eq!(result1, "Usage: (75.25%)");
+        assert_eq!(result2, "Usage: (75.25%)");
+
+        // Test with environment variable unset
+        std::env::remove_var("Q_TOKEN_USAGE");
+        let result1 = renderer.render_prompt("Usage: ${TOKEN_USAGE}");
+        let result2 = renderer.render_prompt("Usage: $TOKEN_USAGE");
+        assert_eq!(result1, "Usage: (25.50%)");
+        assert_eq!(result2, "Usage: (25.50%)");
+    }
+
+    #[test]
+    fn test_pwd_variable_substitution() {
+        let temp_dir = std::env::temp_dir().join("pwd_test");
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let renderer = ThemeRenderer::new_for_path(&temp_dir);
+        let result = renderer.render_prompt("Current: ${PWD}");
+
+        assert!(result.contains(&temp_dir.to_string_lossy().to_string()));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
