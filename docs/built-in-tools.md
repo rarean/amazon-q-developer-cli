@@ -27,7 +27,7 @@ Execute the specified bash command on Unix-like systems (Linux, macOS).
     "execute_bash": {
       "allowedCommands": ["git status", "git fetch"],
       "deniedCommands": ["git commit .*", "git push .*"],
-      "allowReadOnly": true
+      "autoAllowReadonly": true
     }
   }
 }
@@ -39,7 +39,7 @@ Execute the specified bash command on Unix-like systems (Linux, macOS).
 |--------|------|---------|------------------------------------------------------------------------------------------|
 | `allowedCommands` | array of strings | `[]` | List of specific commands that are allowed without prompting. Supports regex formatting. Note that regex entered are anchored with \A and \z |
 | `deniedCommands` | array of strings | `[]` | List of specific commands that are denied. Supports regex formatting. Note that regex entered are anchored with \A and \z. Deny rules are evaluated before allow rules |
-| `allowReadOnly` | boolean | `true` | Whether to allow read-only commands without prompting                                    |
+| `autoAllowReadonly` | boolean | `false` | Whether to allow read-only commands without prompting                                    |
 
 ## Fs_read Tool
 
@@ -113,13 +113,13 @@ Opens the browser to a pre-filled GitHub issue template to report chat issues, b
 
 This tool has no configuration options.
 
-## Knowledge Tool
+## Knowledge Tool (experimental)
 
 Store and retrieve information in a knowledge base across chat sessions. Provides semantic search capabilities for files, directories, and text content.
 
 This tool has no configuration options.
 
-## Commands Tool
+## Commands Tool (experimental)
 
 Manage custom commands within the chat session. This tool provides the underlying functionality for the `/commands` command system, allowing creation, modification, and execution of custom command templates.
 
@@ -147,13 +147,13 @@ Custom commands can then be executed using:
 
 See the [Custom Commands documentation](./custom-commands.md) for detailed usage information.
 
-## Thinking Tool
+## Thinking Tool (experimental)
 
 An internal reasoning mechanism that improves the quality of complex tasks by breaking them down into atomic actions.
 
 This tool has no configuration options.
 
-## Todo_list Tool
+## TODO List Tool (experimental)
 
 Create and manage TODO lists for tracking multi-step tasks. Lists are stored locally in `.amazonq/cli-todo-lists/`.
 
@@ -170,7 +170,8 @@ Make AWS CLI API calls with the specified service, operation, and parameters.
   "toolsSettings": {
     "use_aws": {
       "allowedServices": ["s3", "lambda", "ec2"],
-      "deniedServices": ["eks", "rds"]
+      "deniedServices": ["eks", "rds"],
+      "autoAllowReadonly": true
     }
   }
 }
@@ -182,6 +183,7 @@ Make AWS CLI API calls with the specified service, operation, and parameters.
 |--------|------|---------|-------------|
 | `allowedServices` | array of strings | `[]` | List of AWS services that can be accessed without prompting |
 | `deniedServices` | array of strings | `[]` | List of AWS services to deny. Deny rules are evaluated before allow rules |
+| `autoAllowReadonly` | boolean | `false` | Whether to automatically allow read-only operations (get, describe, list, ls, search, batch_get) without prompting |
 
 ## Using Tool Settings in Agent Configuration
 

@@ -1,3 +1,4 @@
+pub mod changelog;
 pub mod clear;
 pub mod commands; // NEW: Add commands module
 pub mod compact;
@@ -17,6 +18,7 @@ pub mod todos;
 pub mod tools;
 pub mod usage;
 
+use changelog::ChangelogArgs;
 use clap::Parser;
 use clear::ClearArgs;
 use commands::CommandsSubcommand; // NEW: Add commands import
@@ -80,6 +82,9 @@ pub enum SlashCommand {
     Tools(ToolsArgs),
     /// Create a new Github issue or make a feature request
     Issue(issue::IssueArgs),
+    /// View changelog for Amazon Q CLI
+    #[command(name = "changelog")]
+    Changelog(ChangelogArgs),
     /// View and retrieve prompts
     Prompts(PromptsArgs),
     /// View context hooks
@@ -151,6 +156,7 @@ impl SlashCommand {
                     skip_printing_tools: true,
                 })
             },
+            Self::Changelog(args) => args.execute(session).await,
             Self::Prompts(args) => args.execute(session).await,
             Self::Hooks(args) => args.execute(session).await,
             Self::Usage(args) => args.execute(os, session).await,
@@ -186,6 +192,7 @@ impl SlashCommand {
             Self::Compact(_) => "compact",
             Self::Tools(_) => "tools",
             Self::Issue(_) => "issue",
+            Self::Changelog(_) => "changelog",
             Self::Prompts(_) => "prompts",
             Self::Hooks(_) => "hooks",
             Self::Usage(_) => "usage",
