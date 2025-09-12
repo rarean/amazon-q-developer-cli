@@ -33,8 +33,8 @@ Amazon Q CLI includes experimental features that can be toggled on/off using the
 - Switch between available prompt themes without restarting
 - Preview themes before applying them
 - Interactive theme selection with visual feedback
-- Persistent theme preferences across sessions
 - List all available themes
+- Session-specific theme preferences
 
 **Usage:**
 ```
