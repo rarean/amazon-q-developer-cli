@@ -1,61 +1,76 @@
 # Amazon Q CLI Themes
 
-Amazon Q CLI supports customizable prompt themes that allow you to personalize your command-line experience with git integration, colors, and conditional formatting.
+Amazon Q CLI supports customizable prompt themes that allow you to personalize your chat session experience with git integration, colors, and conditional formatting.
+
+## Enabling Themes
+
+Themes are an experimental feature that must be enabled first:
+
+1. In a chat session, run `/experiment`
+2. Select "Themes" from the list to toggle it on
+3. Use `/themes` commands to manage themes
 
 ## Quick Start
 
 ### List Available Themes
 ```bash
-q theme list
+/themes list
 ```
 
-### Preview a Theme
+### Preview a Theme (validates and shows rendered output)
 ```bash
-q theme preview powerline
+/themes preview powerline
 ```
 
 ### Switch to a Theme
 ```bash
-q theme switch git-enabled
+/themes switch git-enabled
 ```
 
-### Validate a Theme
+### Show Current Theme
 ```bash
-q theme validate my-custom-theme
+/themes current
+```
+
+### Interactive Theme Selection
+```bash
+/themes select
 ```
 
 ## Built-in Themes
 
-### minimal
+### minimal (default)
 A simple, clean prompt:
 ```
-$ 
+>
 ```
 
 ### powerline
-Enhanced prompt with symbols and colors:
+Enhanced prompt with agent, token usage, and git information in colored segments:
 ```
-❯ ⎇ main ●±?↑ ❯ 
+ # ${AGENT} > ${TOKEN_USAGE} > ${GIT_BRANCH}
+ default > (25.50%) > main
 ```
 
 ### git-enabled
-Comprehensive git status display:
+Comprehensive prompt with model, token usage, current directory, and git status:
 ```
-➜ git:(main) ● ± ? ↑ ↓ ✓ $ 
+# ${MODEL}:(${TOKEN_USAGE}) ${PWD}:(${GIT_BRANCH})
+➜ claude-3-5-sonnet:(25.50%) ~/projects/my-repo:(main) >
 ```
 
 ## Theme Syntax
 
 ### Variables
 
+#### Chat Session Variables
+- `${AGENT}` - Current agent name (from Q_AGENT environment variable)
+- `${MODEL}` - Current model name (from Q_MODEL environment variable)
+- `${TOKEN_USAGE}` - Token usage percentage (from Q_TOKEN_USAGE environment variable)
+- `${PWD}` - Current working directory (with ~ substitution for home directory)
+
 #### Git Variables
 - `${GIT_BRANCH}` - Current git branch name
-- `${GIT_CLEAN}` - Clean repository indicator (✓)
-- `${GIT_STAGED}` - Staged changes indicator (●)
-- `${GIT_MODIFIED}` - Modified files indicator (±)
-- `${GIT_UNTRACKED}` - Untracked files indicator (?)
-- `${GIT_AHEAD}` - Commits ahead indicator (↑)
-- `${GIT_BEHIND}` - Commits behind indicator (↓)
 
 #### Color Variables
 - `${RED}` - Red color
@@ -82,60 +97,14 @@ ${GIT_STAGED:+${GIT_STAGED} }${GIT_MODIFIED:+${GIT_MODIFIED} }
 ${GIT_BRANCH:+${BLUE}git:(${GIT_BRANCH})${RESET} }
 ```
 
-## Creating Custom Themes
-
-### Theme File Format
-Create a `.theme` file in `~/.aws/amazonq/themes/`:
-
-```bash
-# Example: ~/.aws/amazonq/themes/my-theme.theme
-${GREEN}${BOLD}➜${RESET} ${GIT_BRANCH:+${CYAN}${GIT_BRANCH}${RESET} }${GIT_STAGED}${GIT_MODIFIED}${GIT_UNTRACKED}$ 
-```
-
-### Theme Examples
-
-#### Simple Git Theme
-```bash
-${GIT_BRANCH:+[${GIT_BRANCH}] }$ 
-```
-
-#### Colorful Status Theme
-```bash
-${BLUE}❯${RESET} ${GIT_BRANCH:+${YELLOW}${GIT_BRANCH}${RESET} }${GIT_CLEAN:+${GREEN}✓${RESET} }${GIT_STAGED:+${GREEN}●${RESET} }${GIT_MODIFIED:+${YELLOW}±${RESET} }${GIT_UNTRACKED:+${RED}?${RESET} }
-```
-
-#### Minimalist Theme
-```bash
-${GIT_BRANCH:+${GIT_BRANCH} }${GIT_STAGED}${GIT_MODIFIED}${GIT_UNTRACKED}> 
-```
-
-#### Powerline-style Theme
-```bash
-${BLUE}${BOLD}❯${RESET} ${GIT_BRANCH:+${CYAN}⎇ ${GIT_BRANCH}${RESET} }${GIT_STAGED}${GIT_MODIFIED}${GIT_UNTRACKED}${GIT_AHEAD}${GIT_BEHIND}${GIT_CLEAN:+ }${YELLOW}❯${RESET} 
-```
-
-## Git Status Colors
-
-Git status indicators are automatically colored:
-- **Clean repository**: Green ✓
-- **Staged changes**: Green ●
-- **Modified files**: Yellow ±
-- **Untracked files**: Red ?
-- **Commits ahead**: Cyan ↑
-- **Commits behind**: Magenta ↓
-
 ## Theme Validation
 
-Themes are validated for:
+Themes are automatically validated when previewed with `/themes preview`. Validation checks for:
 - Balanced braces `${}`
 - Valid variable names
 - Proper conditional syntax
 
-Invalid themes will show descriptive error messages:
-```bash
-q theme validate broken-theme
-# Theme 'broken-theme' is invalid: Unbalanced braces in theme template
-```
+Invalid themes will show descriptive error messages during preview.
 
 ## Best Practices
 
@@ -147,9 +116,14 @@ q theme validate broken-theme
 
 ## Troubleshooting
 
+### Themes feature not available
+```bash
+/experiment  # Enable "Themes" experiment first
+```
+
 ### Theme not found
 ```bash
-q theme list  # Check available themes
+/themes list  # Check available themes (only builtin themes are supported)
 ```
 
 ### Colors not showing
@@ -160,10 +134,7 @@ q theme list  # Check available themes
 - Verify you're in a git repository
 - Check git repository status with `git status`
 
-## Advanced Usage
+## Current Limitations
 
-### Dynamic Theme Switching
-Themes automatically adapt to your current directory's git status. No manual switching required between git and non-git directories.
-
-### Theme Marketplace
-Store and share themes in the `~/.aws/amazonq/themes/` directory. Theme files use the `.theme` extension and contain the prompt template.
+- Only builtin themes are supported (minimal, powerline, git-enabled)
+- Custom theme files are not yet supported
