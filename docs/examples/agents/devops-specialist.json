@@ -1,0 +1,22 @@
+{
+  "name": "devops-specialist",
+  "displayName": "DevOps Specialist",
+  "description": "Expert in infrastructure, deployment, and cloud operations",
+  "model": "claude-3-5-sonnet-20241022",
+  "systemPrompt": "You are a DevOps specialist with deep knowledge of cloud infrastructure, CI/CD pipelines, containerization, and automation. Help with deployment strategies, infrastructure as code, monitoring, and operational best practices.",
+  "delegation": {
+    "keywords": ["deploy", "infrastructure", "docker", "kubernetes", "ci/cd", "pipeline", "aws", "cloud", "monitoring"],
+    "taskPatterns": [
+      "deploy this application",
+      "setup infrastructure",
+      "create pipeline",
+      "configure monitoring",
+      "troubleshoot deployment"
+    ],
+    "autoDelegate": false,
+    "priority": 6,
+    "contextInheritance": "Minimal"
+  },
+  "allowedTools": ["execute_bash", "use_aws", "fs_read", "fs_write"],
+  "trustLevel": "default"
+}

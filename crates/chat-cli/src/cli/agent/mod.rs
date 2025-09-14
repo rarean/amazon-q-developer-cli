@@ -1,8 +1,18 @@
+pub mod analyzer;
+pub mod context_isolator;
+pub mod delegation;
+pub mod delegator;
 pub mod hook;
 mod legacy;
 mod mcp_config;
+pub mod registry;
 mod root_command_args;
 mod wrapper_types;
+
+#[cfg(test)]
+mod cli_tests;
+#[cfg(test)]
+mod integration_tests;
 
 use std::borrow::Borrow;
 use std::collections::{
@@ -28,8 +38,14 @@ use crossterm::{
     queue,
     style,
 };
+pub use delegation::DelegationConfig;
+pub use delegator::{
+    AgentDelegator,
+    DelegationResult,
+};
 use eyre::bail;
 pub use mcp_config::McpServerConfig;
+pub use registry::AgentRegistry;
 pub use root_command_args::*;
 use schemars::{
     JsonSchema,
@@ -164,6 +180,9 @@ pub struct Agent {
     /// The model ID to use for this agent. If not specified, uses the default model.
     #[serde(default)]
     pub model: Option<String>,
+    /// Configuration for agent delegation and chaining
+    #[serde(default)]
+    pub delegation: Option<DelegationConfig>,
     #[serde(skip)]
     pub path: Option<PathBuf>,
 }
@@ -197,6 +216,7 @@ impl Default for Agent {
             tools_settings: Default::default(),
             use_legacy_mcp_json: true,
             model: None,
+            delegation: None,
             path: None,
         }
     }
@@ -908,7 +928,7 @@ pub fn queue_permission_override_warning(
 }
 
 fn default_schema() -> String {
-    "https://raw.githubusercontent.com/aws/amazon-q-developer-cli/refs/heads/main/schemas/agent-v1.json".into()
+    "https://raw.githubusercontent.com/aws/amazon-q-developer-cli/refs/heads/main/schemas/agent-v1.1.json".into()
 }
 
 // Check if a tool reference is MCP-specific (not @builtin and starts with @)
@@ -1208,6 +1228,7 @@ mod tests {
             hooks: Default::default(),
             use_legacy_mcp_json: false,
             model: None,
+            delegation: None,
             path: None,
         };
 

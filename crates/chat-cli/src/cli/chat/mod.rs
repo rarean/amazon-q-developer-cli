@@ -2,6 +2,9 @@ pub mod cli;
 mod consts;
 pub mod context;
 mod conversation;
+mod delegation_commands;
+mod delegation_integration;
+mod delegation_ui;
 mod input_source;
 mod message;
 mod parse;
@@ -148,6 +151,9 @@ use crate::cli::agent::Agents;
 use crate::cli::chat::checkpoint::{
     CheckpointManager,
     truncate_message,
+use crate::cli::agent::{
+    Agents,
+    DelegationResult,
 };
 use crate::cli::chat::cli::SlashCommand;
 use crate::cli::chat::cli::editor::open_editor;
@@ -621,6 +627,12 @@ impl From<parser::RecvError> for ChatError {
     }
 }
 
+impl From<eyre::Report> for ChatError {
+    fn from(value: eyre::Report) -> Self {
+        Self::Custom(value.to_string().into())
+    }
+}
+
 pub struct ChatSession {
     /// For output read by humans and machine
     pub stdout: std::io::Stdout,
@@ -661,6 +673,8 @@ pub struct ChatSession {
     pub theme_manager: Option<themes::ThemeManager>,
     /// Current token usage percentage for display in themed prompts
     token_usage_percent: Option<f32>,
+    /// Manager for agent delegation functionality
+    delegation_manager: delegation_integration::ChatDelegationManager,
 }
 
 impl ChatSession {
@@ -793,6 +807,7 @@ impl ChatSession {
             wrap,
             theme_manager,
             token_usage_percent: None,
+            delegation_manager: delegation_integration::ChatDelegationManager::default(),
         })
     }
 
@@ -2236,6 +2251,18 @@ impl ChatSession {
                 };
                 self.conversation.abandon_tool_use(&self.tool_uses, user_input);
             } else {
+                // Check for delegation intent before processing with main agent
+                if let Ok(delegation_result) = self.delegation_manager.process_input(&user_input, &self.conversation) {
+                    match delegation_result {
+                        DelegationResult::Delegated { agent, task, .. } => {
+                            return self.execute_delegated_task(agent, task, os).await;
+                        },
+                        DelegationResult::NoDelegation => {
+                            // Continue with main agent processing
+                        },
+                    }
+                }
+
                 self.conversation.set_next_user_message(user_input).await;
             }
 
@@ -2257,6 +2284,99 @@ impl ChatSession {
 
             Ok(ChatState::HandleResponseStream(conv_state))
         }
+    }
+
+    /// Execute a task with a delegated agent with enhanced error handling
+    async fn execute_delegated_task(
+        &mut self,
+        agent_name: String,
+        task: String,
+        os: &mut Os,
+    ) -> Result<ChatState, ChatError> {
+        use crate::cli::chat::delegation_ui::DelegationUI;
+
+        // Display enhanced delegation notification
+        let notification = DelegationUI::format_delegation_notification(&agent_name, &task);
+        queue!(
+            self.stderr,
+            style::SetForegroundColor(Color::Cyan),
+            style::Print(format!("{}\n", notification)),
+            style::SetForegroundColor(Color::Reset)
+        )?;
+
+        // Try to execute with fallback to main agent on failure
+        match self.try_execute_with_agent(&agent_name, &task, os).await {
+            Ok(state) => Ok(state),
+            Err(e) => {
+                // Display failure message and fallback to main agent
+                let failure_msg = DelegationUI::format_delegation_failure(&agent_name, &e.to_string());
+                queue!(
+                    self.stderr,
+                    style::SetForegroundColor(Color::Red),
+                    style::Print(format!("{}\n", failure_msg)),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("🔄 Falling back to main agent...\n"),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
+
+                // Clear active agent and proceed with main agent
+                self.delegation_manager.set_active_agent(None);
+                self.execute_with_main_agent(task, os).await
+            },
+        }
+    }
+
+    /// Try to execute task with specific agent
+    async fn try_execute_with_agent(
+        &mut self,
+        agent_name: &str,
+        task: &str,
+        os: &mut Os,
+    ) -> Result<ChatState, ChatError> {
+        // Set the delegated task as the user message
+        self.conversation.set_next_user_message(task.to_string()).await;
+        self.reset_user_turn();
+
+        // Create conversation state and proceed with delegated agent
+        let conv_state = self
+            .conversation
+            .as_sendable_conversation_state(os, &mut self.stderr, true)
+            .await?;
+        self.send_tool_use_telemetry(os).await;
+
+        queue!(self.stderr, style::SetForegroundColor(Color::Magenta))?;
+        queue!(self.stderr, style::SetForegroundColor(Color::Reset))?;
+        queue!(self.stderr, cursor::Hide)?;
+
+        if self.interactive {
+            self.spinner = Some(Spinner::new(Spinners::Dots, format!("Thinking with {}...", agent_name)));
+        }
+
+        Ok(ChatState::HandleResponseStream(conv_state))
+    }
+
+    /// Execute task with main agent (fallback)
+    async fn execute_with_main_agent(&mut self, task: String, os: &mut Os) -> Result<ChatState, ChatError> {
+        // Set the task as the user message
+        self.conversation.set_next_user_message(task).await;
+        self.reset_user_turn();
+
+        // Create conversation state and proceed with main agent
+        let conv_state = self
+            .conversation
+            .as_sendable_conversation_state(os, &mut self.stderr, true)
+            .await?;
+        self.send_tool_use_telemetry(os).await;
+
+        queue!(self.stderr, style::SetForegroundColor(Color::Magenta))?;
+        queue!(self.stderr, style::SetForegroundColor(Color::Reset))?;
+        queue!(self.stderr, cursor::Hide)?;
+
+        if self.interactive {
+            self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
+        }
+
+        Ok(ChatState::HandleResponseStream(conv_state))
     }
 
     async fn handle_custom_command_execution(

@@ -1,0 +1,22 @@
+{
+  "name": "code-reviewer",
+  "displayName": "Code Reviewer",
+  "description": "Specialized agent for code review and quality analysis",
+  "model": "claude-3-5-sonnet-20241022",
+  "systemPrompt": "You are a senior code reviewer with expertise in multiple programming languages. Focus on code quality, security, performance, and best practices. Provide constructive feedback with specific suggestions for improvement.",
+  "delegation": {
+    "keywords": ["review", "code", "quality", "security", "performance", "refactor", "optimize"],
+    "taskPatterns": [
+      "review this code",
+      "check for bugs",
+      "analyze security",
+      "optimize performance",
+      "suggest improvements"
+    ],
+    "autoDelegate": true,
+    "priority": 8,
+    "contextInheritance": "Partial"
+  },
+  "allowedTools": ["fs_read", "fs_write"],
+  "trustLevel": "default"
+}

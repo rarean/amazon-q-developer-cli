@@ -97,3 +97,70 @@ impl Hook {
         DEFAULT_CACHE_TTL_SECONDS
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hook_new() {
+        let hook = Hook::new("echo test".to_string(), Source::Agent);
+        assert_eq!(hook.command, "echo test");
+        assert_eq!(hook.timeout_ms, DEFAULT_TIMEOUT_MS);
+        assert_eq!(hook.max_output_size, DEFAULT_MAX_OUTPUT_SIZE);
+        assert_eq!(hook.cache_ttl_seconds, DEFAULT_CACHE_TTL_SECONDS);
+        assert_eq!(hook.source, Source::Agent);
+    }
+
+    #[test]
+    fn test_hook_trigger_display() {
+        assert_eq!(HookTrigger::AgentSpawn.to_string(), "agentSpawn");
+        assert_eq!(HookTrigger::UserPromptSubmit.to_string(), "userPromptSubmit");
+    }
+
+    #[test]
+    fn test_source_default() {
+        let source = Source::default();
+        assert_eq!(source, Source::Agent);
+    }
+
+    #[test]
+    fn test_hook_serialization() {
+        let hook = Hook {
+            command: "test command".to_string(),
+            timeout_ms: 5000,
+            max_output_size: 2048,
+            cache_ttl_seconds: 300,
+            source: Source::Session,
+        };
+
+        let json = serde_json::to_string(&hook).unwrap();
+        let deserialized: Hook = serde_json::from_str(&json).unwrap();
+        assert_eq!(hook.command, deserialized.command);
+        assert_eq!(hook.timeout_ms, deserialized.timeout_ms);
+        assert_eq!(hook.max_output_size, deserialized.max_output_size);
+        assert_eq!(hook.cache_ttl_seconds, deserialized.cache_ttl_seconds);
+    }
+
+    #[test]
+    fn test_hook_trigger_serialization() {
+        let triggers = vec![HookTrigger::AgentSpawn, HookTrigger::UserPromptSubmit];
+
+        for trigger in triggers {
+            let json = serde_json::to_string(&trigger).unwrap();
+            let deserialized: HookTrigger = serde_json::from_str(&json).unwrap();
+            assert_eq!(trigger, deserialized);
+        }
+    }
+
+    #[test]
+    fn test_hooks_hashmap() {
+        let mut hooks = HashMap::new();
+        let hook = Hook::new("test".to_string(), Source::Agent);
+        hooks.insert(HookTrigger::AgentSpawn, hook);
+
+        let hooks_struct = Hooks(hooks);
+        let json = serde_json::to_string(&hooks_struct).unwrap();
+        let deserialized: Hooks = serde_json::from_str(&json).unwrap();
+        assert_eq!(hooks_struct, deserialized);
+    }
+}
