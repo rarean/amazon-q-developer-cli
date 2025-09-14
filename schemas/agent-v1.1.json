@@ -213,6 +213,51 @@
         "null"
       ],
       "default": null
+    },
+    "delegation": {
+      "description": "Configuration for agent delegation and chaining",
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "keywords": {
+          "description": "Keywords that trigger delegation to this agent",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "taskPatterns": {
+          "description": "Regex patterns that match tasks for this agent",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "autoDelegate": {
+          "description": "Whether this agent can be automatically selected for delegation",
+          "type": "boolean",
+          "default": false
+        },
+        "priority": {
+          "description": "Priority for agent selection (0-10, higher is more preferred)",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 5
+        },
+        "contextInheritance": {
+          "description": "Level of context inheritance from main conversation",
+          "type": "string",
+          "enum": ["none", "minimal", "partial", "full"],
+          "default": "minimal"
+        }
+      },
+      "additionalProperties": false,
+      "default": null
     }
   },
   "additionalProperties": false,

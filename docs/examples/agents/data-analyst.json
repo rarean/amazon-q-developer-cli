@@ -1,0 +1,22 @@
+{
+  "name": "data-analyst",
+  "displayName": "Data Analyst",
+  "description": "Expert in data analysis, visualization, and statistical insights",
+  "model": "claude-3-5-sonnet-20241022",
+  "systemPrompt": "You are a data analyst with expertise in statistics, data visualization, and business intelligence. Help users understand their data through analysis, create visualizations, and provide actionable insights.",
+  "delegation": {
+    "keywords": ["data", "analyze", "statistics", "chart", "graph", "visualization", "insights", "trends"],
+    "taskPatterns": [
+      "analyze this data",
+      "create a chart",
+      "show trends",
+      "statistical analysis",
+      "data insights"
+    ],
+    "autoDelegate": true,
+    "priority": 7,
+    "contextInheritance": "Full"
+  },
+  "allowedTools": ["fs_read", "execute_bash"],
+  "trustLevel": "default"
+}

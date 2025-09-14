@@ -51,6 +51,16 @@ use crate::cli::chat::{
 use crate::cli::issue;
 use crate::os::Os;
 
+#[derive(Debug, PartialEq, clap::Subcommand)]
+pub enum AgentsSubcommand {
+    /// List available agents
+    List,
+    /// Show active agent
+    Active,
+    /// Clear active agent
+    Clear,
+}
+
 /// q (Amazon Q Chat)
 #[derive(Debug, PartialEq, Parser)]
 #[command(color = clap::ColorChoice::Always, term_width = 0, after_long_help = EXTRA_HELP)]
@@ -115,6 +125,16 @@ pub enum SlashCommand {
     /// View, manage, and resume to-do lists
     #[command(subcommand)]
     Todos(TodoSubcommand),
+    /// Delegate task to specific agent
+    Delegate {
+        /// Agent name to delegate to
+        agent: String,
+        /// Optional task description
+        task: Option<String>,
+    },
+    /// Manage agent delegation
+    #[command(subcommand)]
+    Agents(AgentsSubcommand),
 }
 
 impl SlashCommand {
@@ -182,6 +202,56 @@ impl SlashCommand {
             //     })
             // },
             Self::Todos(subcommand) => subcommand.execute(os, session).await,
+            Self::Delegate { agent, task } => {
+                use crate::cli::chat::delegation_commands::DelegationCommandHandler;
+                let task_str = task.unwrap_or_else(|| "Ready for delegation".to_string());
+                let result = DelegationCommandHandler::handle_command(
+                    "delegate",
+                    &[&agent, &task_str],
+                    &mut session.delegation_manager,
+                )?;
+
+                use crossterm::{
+                    queue,
+                    style,
+                };
+                queue!(
+                    session.stderr,
+                    style::SetForegroundColor(style::Color::Green),
+                    style::Print(format!("{}\n", result)),
+                    style::SetForegroundColor(style::Color::Reset)
+                )?;
+
+                Ok(ChatState::PromptUser {
+                    skip_printing_tools: false,
+                })
+            },
+            Self::Agents(subcommand) => {
+                use crate::cli::chat::delegation_commands::DelegationCommandHandler;
+                let args = match subcommand {
+                    AgentsSubcommand::List => vec!["list"],
+                    AgentsSubcommand::Active => vec!["active"],
+                    AgentsSubcommand::Clear => vec!["clear"],
+                };
+
+                let result =
+                    DelegationCommandHandler::handle_command("agents", &args, &mut session.delegation_manager)?;
+
+                use crossterm::{
+                    queue,
+                    style,
+                };
+                queue!(
+                    session.stderr,
+                    style::SetForegroundColor(style::Color::Cyan),
+                    style::Print(format!("{}\n", result)),
+                    style::SetForegroundColor(style::Color::Reset)
+                )?;
+
+                Ok(ChatState::PromptUser {
+                    skip_printing_tools: false,
+                })
+            },
         }
     }
 
@@ -213,6 +283,8 @@ impl SlashCommand {
                 PersistSubcommand::Load { .. } => "load",
             },
             Self::Todos(_) => "todos",
+            Self::Delegate { .. } => "delegate",
+            Self::Agents(_) => "agents",
         }
     }
 
