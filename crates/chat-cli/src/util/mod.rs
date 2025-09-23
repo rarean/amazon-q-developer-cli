@@ -13,7 +13,6 @@ pub mod system_info;
 #[cfg(test)]
 pub mod test;
 pub mod ui;
-pub mod usage_tracker; // NEW: Add usage tracker module
 
 use std::fmt::Display;
 use std::io;
