@@ -145,7 +145,7 @@ pub struct Agent {
     pub description: Option<String>,
     /// The intention for this field is to provide high level context to the
     /// agent. This should be seen as the same category of context as a system prompt.
-    #[serde(default)]
+    #[serde(default, alias = "instructions")]
     pub prompt: Option<String>,
     /// Configuration for Model Context Protocol (MCP) servers
     #[serde(default)]
@@ -820,9 +820,9 @@ impl Agents {
             "fs_read" => "trust working directory".dark_grey(),
             "fs_write" => "not trusted".dark_grey(),
             #[cfg(not(windows))]
-            "execute_bash" => "not trusted".dark_grey(),
+            "execute_bash" => "trust read-only commands".dark_grey(),
             #[cfg(windows)]
-            "execute_cmd" => "not trusted".dark_grey(),
+            "execute_cmd" => "trust read-only commands".dark_grey(),
             "use_aws" => "trust read-only commands".dark_grey(),
             "report_issue" => "trusted".dark_green().bold(),
             "introspect" => "trusted".dark_green().bold(),
@@ -1001,6 +1001,192 @@ mod tests {
     }
 
     #[test]
+    fn test_agent_with_delegation_and_instructions() {
+        let agent_json = r#"
+        {
+            "name": "test-agent",
+            "instructions": "You are a test agent with delegation capabilities",
+            "delegation": {
+                "keywords": ["test", "debug"],
+                "taskPatterns": [".*test.*"],
+                "autoDelegate": true,
+                "priority": 8,
+                "contextInheritance": "full"
+            }
+        }
+        "#;
+
+        let agent: Agent = serde_json::from_str(agent_json).expect("Failed to deserialize agent with delegation");
+
+        // Test instructions field works as alias for prompt
+        assert_eq!(
+            agent.prompt,
+            Some("You are a test agent with delegation capabilities".to_string())
+        );
+
+        // Test delegation field
+        let delegation = agent.delegation.expect("Delegation config should be present");
+        assert_eq!(delegation.keywords, vec!["test", "debug"]);
+        assert_eq!(delegation.task_patterns, vec![".*test.*"]);
+        assert!(delegation.auto_delegate);
+        assert_eq!(delegation.priority, 8);
+        assert_eq!(
+            delegation.context_inheritance,
+            crate::cli::agent::delegation::ContextInheritanceLevel::Full
+        );
+    }
+
+    #[test]
+    fn test_agent_deserialization_invalid_json() {
+        let invalid_json = r#"{"name": "test", "invalid_field": true}"#;
+        let result = serde_json::from_str::<Agent>(invalid_json);
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn test_agent_deserialization_missing_required_field() {
+        let missing_name_json = r#"{"description": "test agent"}"#;
+        let result = serde_json::from_str::<Agent>(missing_name_json);
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("missing field"));
+    }
+
+    #[test]
+    fn test_agent_deserialization_invalid_delegation_priority() {
+        // Priority is u8, so values > 255 should fail, but 15 is valid
+        let invalid_priority_json = r#"
+        {
+            "name": "test-agent",
+            "delegation": {
+                "priority": 300
+            }
+        }
+        "#;
+        let result = serde_json::from_str::<Agent>(invalid_priority_json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_agent_deserialization_invalid_context_inheritance() {
+        let invalid_inheritance_json = r#"
+        {
+            "name": "test-agent",
+            "delegation": {
+                "contextInheritance": "invalid_level"
+            }
+        }
+        "#;
+        let result = serde_json::from_str::<Agent>(invalid_inheritance_json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_agent_config_error_display() {
+        let path = PathBuf::from("/test/path.json");
+        let json_error = serde_json::from_str::<Agent>("invalid json").unwrap_err();
+
+        let error = AgentConfigError::InvalidJson {
+            error: json_error,
+            path: path.clone(),
+        };
+
+        let error_string = error.to_string();
+        assert!(error_string.contains("/test/path.json"));
+        assert!(error_string.contains("invalid"));
+    }
+
+    #[test]
+    fn test_validate_agent_name_invalid_cases() {
+        // Test empty name
+        assert!(validate_agent_name("").is_err());
+
+        // Test name with invalid characters
+        assert!(validate_agent_name("test/agent").is_err());
+        assert!(validate_agent_name("test\\agent").is_err());
+        assert!(validate_agent_name("test agent").is_err());
+        assert!(validate_agent_name("test.agent").is_err());
+
+        // Test name starting with invalid character
+        assert!(validate_agent_name("-test").is_err());
+        assert!(validate_agent_name("_test").is_err());
+        assert!(validate_agent_name("!test").is_err());
+    }
+
+    #[test]
+    fn test_validate_agent_name_valid_cases() {
+        assert!(validate_agent_name("test-agent").is_ok());
+        assert!(validate_agent_name("test_agent").is_ok());
+        assert!(validate_agent_name("testagent123").is_ok());
+        assert!(validate_agent_name("a").is_ok());
+        assert!(validate_agent_name("Agent1").is_ok());
+        assert!(validate_agent_name("test-agent-123").is_ok());
+        assert!(validate_agent_name("123valid").is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_agent_load_file_not_found() {
+        let os = crate::os::Os::new().await.unwrap();
+        let non_existent_path = PathBuf::from("/non/existent/path.json");
+        let mut legacy_config = None;
+
+        let result = Agent::load(&os, &non_existent_path, &mut legacy_config, false, &mut std::io::sink()).await;
+        assert!(result.is_err());
+
+        match result.unwrap_err() {
+            AgentConfigError::Io(_) => {}, // Expected
+            other => panic!("Expected IO error, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_agent_load_invalid_json_content() {
+        let os = crate::os::Os::new().await.unwrap();
+        let temp_path = PathBuf::from("/tmp/test_invalid_agent_load.json");
+        let mut legacy_config = None;
+
+        // Write invalid JSON
+        let invalid_json = r#"{"name": "test", invalid json}"#;
+        if let Ok(_) = os.fs.write(&temp_path, invalid_json.as_bytes()).await {
+            let result = Agent::load(&os, &temp_path, &mut legacy_config, false, &mut std::io::sink()).await;
+            assert!(result.is_err());
+
+            match result.unwrap_err() {
+                AgentConfigError::InvalidJson { path, .. } => {
+                    assert_eq!(path, temp_path);
+                },
+                other => panic!("Expected InvalidJson error, got: {:?}", other),
+            }
+
+            // Cleanup
+            let _ = os.fs.remove_file(&temp_path).await;
+        } else {
+            // If we can't write the file, just test that loading a non-existent file fails
+            let result = Agent::load(&os, &temp_path, &mut legacy_config, false, &mut std::io::sink()).await;
+            assert!(result.is_err());
+        }
+    }
+
+    #[test]
+    fn test_agent_error_types_debug() {
+        let path = PathBuf::from("/test.json");
+        let json_error = serde_json::from_str::<Agent>("invalid").unwrap_err();
+
+        let invalid_json_error = AgentConfigError::InvalidJson {
+            error: json_error,
+            path: path.clone(),
+        };
+
+        let debug_string = format!("{:?}", invalid_json_error);
+        assert!(debug_string.contains("InvalidJson"));
+        assert!(debug_string.contains("test.json"));
+    }
+
+    #[test]
     fn test_get_active() {
         let mut collection = Agents::default();
         assert!(collection.get_active().is_none());
@@ -1057,23 +1243,6 @@ mod tests {
         let result = collection.switch("nonexistent");
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "No agent with name nonexistent found");
-    }
-
-    #[test]
-    fn test_validate_agent_name() {
-        // Valid names
-        assert!(validate_agent_name("valid").is_ok());
-        assert!(validate_agent_name("valid123").is_ok());
-        assert!(validate_agent_name("valid-name").is_ok());
-        assert!(validate_agent_name("valid_name").is_ok());
-        assert!(validate_agent_name("123valid").is_ok());
-
-        // Invalid names
-        assert!(validate_agent_name("").is_err());
-        assert!(validate_agent_name("-invalid").is_err());
-        assert!(validate_agent_name("_invalid").is_err());
-        assert!(validate_agent_name("invalid!").is_err());
-        assert!(validate_agent_name("invalid space").is_err());
     }
 
     #[test]

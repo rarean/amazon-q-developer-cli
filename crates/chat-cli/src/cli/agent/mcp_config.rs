@@ -61,6 +61,7 @@ mod tests {
             r#type: crate::cli::chat::tools::custom_tool::TransportType::Stdio,
             url: String::new(),
             headers: HashMap::new(),
+            oauth_scopes: Vec::new(),
             command: "test_command".to_string(),
             args: Vec::new(),
             env: Some(HashMap::new()),
