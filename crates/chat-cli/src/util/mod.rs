@@ -15,7 +15,6 @@ pub mod system_info;
 pub mod test;
 pub mod tool_permission_checker;
 pub mod ui;
-pub mod usage_tracker; // NEW: Add usage tracker module
 
 use std::fmt::Display;
 use std::io;

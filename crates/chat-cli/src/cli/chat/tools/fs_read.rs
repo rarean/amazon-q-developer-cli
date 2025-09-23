@@ -198,7 +198,7 @@ impl FsRead {
                                 }
 
                                 // We only want to ask if we are not allowing read only
-                                // operation
+                                // operation and the path is not in the allow set (which includes CWD)
                                 if !is_in_allowlist && !allow_read_only && !allow_set.is_match(path.as_ref() as &str) {
                                     ask = true;
                                 }
@@ -862,7 +862,10 @@ fn format_mode(mode: u32) -> [char; 9] {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{
+        HashMap,
+        HashSet,
+    };
     use std::path::PathBuf;
 
     use super::*;
@@ -1459,6 +1462,7 @@ mod tests {
 
         let agent = Agent {
             name: "test_agent".to_string(),
+            allowed_tools: HashSet::new(), // Explicitly empty - not in allowed_tools
             tools_settings: {
                 let mut map = HashMap::new();
                 map.insert(
@@ -1469,7 +1473,7 @@ mod tests {
                 );
                 map
             },
-            ..Default::default() // Not in allowed_tools, allow_read_only = false
+            ..Default::default()
         };
 
         // Test 1: Explicitly allowed path should work
@@ -1512,6 +1516,7 @@ mod tests {
 
         let agent = Agent {
             name: "test_agent".to_string(),
+            allowed_tools: HashSet::new(),  // Explicitly empty - not in allowed_tools
             tools_settings: HashMap::new(), // No fs_read settings
             ..Default::default()
         };

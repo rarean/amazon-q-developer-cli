@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::Display;
 
 use schemars::JsonSchema;
@@ -76,6 +77,9 @@ pub struct Hook {
     pub source: Source,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
+pub struct Hooks(pub HashMap<HookTrigger, Hook>);
+
 impl Hook {
     pub fn new(command: String, source: Source) -> Self {
         Self {
@@ -133,6 +137,7 @@ mod tests {
             timeout_ms: 5000,
             max_output_size: 2048,
             cache_ttl_seconds: 300,
+            matcher: None,
             source: Source::Session,
         };
 
