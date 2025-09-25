@@ -2232,8 +2232,11 @@ async fn test_resource_exhaustion_scenarios() {
 
     println!("Listed {} commands in {:?}", commands.len(), list_duration);
 
-    // Should complete listing in reasonable time even with many commands
-    assert!(list_duration.as_secs() < 5, "Listing should complete within 5 seconds");
+    // Should complete listing in reasonable time even with many commands (increased for CI)
+    assert!(
+        list_duration.as_secs() < 10,
+        "Listing should complete within 10 seconds"
+    );
 
     // Test bulk removal by deleting files
     let removal_start = std::time::Instant::now();

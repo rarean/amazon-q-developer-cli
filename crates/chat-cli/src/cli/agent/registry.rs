@@ -253,4 +253,322 @@ mod tests {
         // Should handle mixed configurations without errors
         // Length is always >= 0 for Vec, so just verify it doesn't crash
     }
+
+    #[test]
+    fn test_register_agent() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        let agent = Agent {
+            name: "test-agent".to_string(),
+            description: Some("Test agent".to_string()),
+            delegation: Some(DelegationConfig {
+                keywords: vec!["test".to_string()],
+                task_patterns: vec!["test task".to_string()],
+                context_inheritance: ContextInheritanceLevel::Minimal,
+                auto_delegate: false,
+                priority: 5,
+            }),
+            ..Default::default()
+        };
+
+        registry.register_agent(agent);
+
+        assert_eq!(registry.list_agents().len(), 1);
+        assert!(registry.get_agent("test-agent").is_some());
+    }
+
+    #[test]
+    fn test_register_multiple_agents() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        let agent1 = Agent {
+            name: "agent1".to_string(),
+            ..Default::default()
+        };
+        let agent2 = Agent {
+            name: "agent2".to_string(),
+            ..Default::default()
+        };
+
+        registry.register_agent(agent1);
+        registry.register_agent(agent2);
+
+        assert_eq!(registry.list_agents().len(), 2);
+        assert!(registry.get_agent("agent1").is_some());
+        assert!(registry.get_agent("agent2").is_some());
+    }
+
+    #[test]
+    fn test_register_duplicate_agent_overwrites() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        let agent1 = Agent {
+            name: "duplicate".to_string(),
+            description: Some("First version".to_string()),
+            ..Default::default()
+        };
+        let agent2 = Agent {
+            name: "duplicate".to_string(),
+            description: Some("Second version".to_string()),
+            ..Default::default()
+        };
+
+        registry.register_agent(agent1);
+        registry.register_agent(agent2);
+
+        assert_eq!(registry.list_agents().len(), 1);
+        let agent = registry.get_agent("duplicate").unwrap();
+        assert_eq!(agent.description, Some("Second version".to_string()));
+    }
+
+    #[test]
+    fn test_get_agent_existing() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        let agent = Agent {
+            name: "findme".to_string(),
+            description: Some("Test agent".to_string()),
+            ..Default::default()
+        };
+        registry.register_agent(agent);
+
+        let found = registry.get_agent("findme");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().name, "findme");
+    }
+
+    #[test]
+    fn test_get_agent_nonexistent() {
+        let registry = AgentRegistry::new().unwrap();
+
+        let found = registry.get_agent("nonexistent");
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn test_list_agents_empty() {
+        let registry = AgentRegistry::new().unwrap();
+
+        let agents = registry.list_agents();
+        assert_eq!(agents.len(), 0);
+    }
+
+    #[test]
+    fn test_list_agents_multiple() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        let agent1 = Agent {
+            name: "agent1".to_string(),
+            ..Default::default()
+        };
+        let agent2 = Agent {
+            name: "agent2".to_string(),
+            ..Default::default()
+        };
+        let agent3 = Agent {
+            name: "agent3".to_string(),
+            ..Default::default()
+        };
+
+        registry.register_agent(agent1);
+        registry.register_agent(agent2);
+        registry.register_agent(agent3);
+
+        let agents = registry.list_agents();
+        assert_eq!(agents.len(), 3);
+    }
+
+    #[test]
+    fn test_list_delegatable_agents() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        let delegatable = Agent {
+            name: "delegatable".to_string(),
+            delegation: Some(DelegationConfig {
+                keywords: vec!["test".to_string()],
+                task_patterns: vec![],
+                context_inheritance: ContextInheritanceLevel::Minimal,
+                auto_delegate: true,
+                priority: 5,
+            }),
+            ..Default::default()
+        };
+        let non_delegatable = Agent {
+            name: "non-delegatable".to_string(),
+            delegation: None,
+            ..Default::default()
+        };
+
+        registry.register_agent(delegatable);
+        registry.register_agent(non_delegatable);
+
+        let delegatable_agents = registry.list_delegatable_agents();
+        assert_eq!(delegatable_agents.len(), 1);
+        assert_eq!(delegatable_agents[0].name, "delegatable");
+    }
+
+    #[test]
+    fn test_find_candidates_keyword_match() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        let agent = Agent {
+            name: "keyword-agent".to_string(),
+            delegation: Some(DelegationConfig {
+                keywords: vec!["rust".to_string(), "code".to_string()],
+                task_patterns: vec![],
+                context_inheritance: ContextInheritanceLevel::Minimal,
+                auto_delegate: true,
+                priority: 5,
+            }),
+            ..Default::default()
+        };
+        registry.register_agent(agent);
+
+        let candidates = registry.find_candidates("help me with rust programming");
+        assert!(!candidates.is_empty());
+        assert_eq!(candidates[0].name, "keyword-agent");
+    }
+
+    #[test]
+    fn test_find_candidates_no_match() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        let agent = Agent {
+            name: "specific-agent".to_string(),
+            delegation: Some(DelegationConfig {
+                keywords: vec!["specific".to_string()],
+                task_patterns: vec![],
+                context_inheritance: ContextInheritanceLevel::Minimal,
+                auto_delegate: true,
+                priority: 5,
+            }),
+            ..Default::default()
+        };
+        registry.register_agent(agent);
+
+        let candidates = registry.find_candidates("unrelated query");
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn test_find_candidates_pattern_match() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        let agent = Agent {
+            name: "pattern-agent".to_string(),
+            delegation: Some(DelegationConfig {
+                keywords: vec![],
+                task_patterns: vec!["debug.*error".to_string()],
+                context_inheritance: ContextInheritanceLevel::Minimal,
+                auto_delegate: true,
+                priority: 7,
+            }),
+            ..Default::default()
+        };
+        registry.register_agent(agent);
+
+        let candidates = registry.find_candidates("debug this error");
+        assert!(!candidates.is_empty());
+        assert_eq!(candidates[0].name, "pattern-agent");
+    }
+
+    #[test]
+    fn test_find_candidates_priority_ordering() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        let low_priority = Agent {
+            name: "low-priority".to_string(),
+            delegation: Some(DelegationConfig {
+                keywords: vec!["test".to_string()],
+                task_patterns: vec![],
+                context_inheritance: ContextInheritanceLevel::Minimal,
+                auto_delegate: true,
+                priority: 3,
+            }),
+            ..Default::default()
+        };
+        let high_priority = Agent {
+            name: "high-priority".to_string(),
+            delegation: Some(DelegationConfig {
+                keywords: vec!["test".to_string()],
+                task_patterns: vec![],
+                context_inheritance: ContextInheritanceLevel::Minimal,
+                auto_delegate: true,
+                priority: 8,
+            }),
+            ..Default::default()
+        };
+
+        registry.register_agent(low_priority);
+        registry.register_agent(high_priority);
+
+        let candidates = registry.find_candidates("test query");
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].name, "high-priority");
+        assert_eq!(candidates[1].name, "low-priority");
+    }
+
+    #[test]
+    fn test_find_candidates_empty_input() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        let agent = Agent {
+            name: "test-agent".to_string(),
+            delegation: Some(DelegationConfig {
+                keywords: vec!["test".to_string()],
+                task_patterns: vec![],
+                context_inheritance: ContextInheritanceLevel::Minimal,
+                auto_delegate: true,
+                priority: 5,
+            }),
+            ..Default::default()
+        };
+        registry.register_agent(agent);
+
+        let candidates = registry.find_candidates("");
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn test_registry_with_empty_keywords() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        let agent = Agent {
+            name: "empty-keywords".to_string(),
+            delegation: Some(DelegationConfig {
+                keywords: vec![],
+                task_patterns: vec![],
+                context_inheritance: ContextInheritanceLevel::Minimal,
+                auto_delegate: true,
+                priority: 5,
+            }),
+            ..Default::default()
+        };
+        registry.register_agent(agent);
+
+        let candidates = registry.find_candidates("any query");
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn test_registry_case_insensitive_matching() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        let agent = Agent {
+            name: "case-agent".to_string(),
+            delegation: Some(DelegationConfig {
+                keywords: vec!["RUST".to_string()],
+                task_patterns: vec![],
+                context_inheritance: ContextInheritanceLevel::Minimal,
+                auto_delegate: true,
+                priority: 5,
+            }),
+            ..Default::default()
+        };
+        registry.register_agent(agent);
+
+        let candidates = registry.find_candidates("help with rust code");
+        assert!(!candidates.is_empty());
+        assert_eq!(candidates[0].name, "case-agent");
+    }
 }

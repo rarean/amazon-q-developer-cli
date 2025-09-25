@@ -7,6 +7,27 @@ use super::registry::{
     AgentRegistry,
 };
 
+/// Configuration for delegation decision thresholds
+#[derive(Debug, Clone)]
+pub struct DelegationConfig {
+    /// Minimum confidence threshold for auto-delegation (0.0-1.0)
+    pub auto_delegate_threshold: f32,
+    /// Minimum score threshold for agent candidates (0.0-1.0)
+    pub candidate_score_threshold: f32,
+    /// Maximum number of candidates to return
+    pub max_candidates: usize,
+}
+
+impl Default for DelegationConfig {
+    fn default() -> Self {
+        Self {
+            auto_delegate_threshold: 0.6,
+            candidate_score_threshold: 0.3,
+            max_candidates: 5,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum DelegationIntent {
@@ -23,11 +44,16 @@ pub enum DelegationIntent {
 pub struct RequestAnalyzer {
     registry: Arc<AgentRegistry>,
     explicit_patterns: Vec<Regex>,
+    config: DelegationConfig,
 }
 
 #[allow(dead_code)]
 impl RequestAnalyzer {
     pub fn new(registry: Arc<AgentRegistry>) -> Self {
+        Self::with_config(registry, DelegationConfig::default())
+    }
+
+    pub fn with_config(registry: Arc<AgentRegistry>, config: DelegationConfig) -> Self {
         let explicit_patterns = vec![
             // "use <agent> agent"
             Regex::new(r"(?i)use\s+([a-zA-Z0-9_-]+)\s+agent").unwrap(),
@@ -42,6 +68,7 @@ impl RequestAnalyzer {
         Self {
             registry,
             explicit_patterns,
+            config,
         }
     }
 
@@ -75,7 +102,7 @@ impl RequestAnalyzer {
 
         // Calculate auto-delegation confidence
         let confidence = Self::calculate_delegation_confidence(input);
-        if confidence > 0.7 {
+        if confidence > self.config.auto_delegate_threshold {
             let candidates = self.score_agent_candidates(input);
             if !candidates.is_empty() {
                 return (DelegationIntent::AutoDelegate(candidates), confidence);
@@ -94,46 +121,147 @@ impl RequestAnalyzer {
             candidate.score = self.calculate_agent_score(&candidate.name, input);
         }
 
-        // Sort by score descending and filter by minimum threshold
+        // Apply priority-based selection algorithm
+        self.apply_priority_based_selection(&mut candidates);
+
+        // Sort by score descending and filter by configurable threshold
         candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
-        candidates.into_iter().filter(|c| c.score > 0.3).collect()
+        candidates
+            .into_iter()
+            .filter(|c| c.score > self.config.candidate_score_threshold)
+            .take(self.config.max_candidates)
+            .collect()
+    }
+
+    /// Apply priority-based selection algorithm to enhance candidate scoring
+    fn apply_priority_based_selection(&self, candidates: &mut [AgentCandidate]) {
+        for candidate in candidates {
+            if let Some(agent) = self.registry.get_agent(&candidate.name) {
+                if let Some(delegation) = &agent.delegation {
+                    // Priority boost: higher priority agents get score multiplier
+                    let priority_multiplier = 1.0 + (delegation.priority as f32 / 20.0); // 1.0-1.5x multiplier
+                    candidate.score *= priority_multiplier;
+
+                    // Auto-delegate preference: agents that allow auto-delegation get slight boost
+                    if delegation.auto_delegate {
+                        candidate.score += 0.1;
+                    }
+
+                    // Context inheritance consideration: full context agents get boost for complex tasks
+                    if matches!(
+                        delegation.context_inheritance,
+                        super::delegation::ContextInheritanceLevel::Full
+                    ) {
+                        candidate.score += 0.05;
+                    }
+                }
+            }
+        }
     }
 
     /// Determine if input should trigger auto-delegation
     #[allow(clippy::unused_self)] // Public API method
     pub fn should_auto_delegate(&self, input: &str) -> bool {
         let confidence = Self::calculate_delegation_confidence(input);
-        confidence > 0.6 // Threshold for auto-delegation
+        confidence > self.config.auto_delegate_threshold
     }
 
     /// Calculate confidence score for delegation (0.0 to 1.0)
     fn calculate_delegation_confidence(input: &str) -> f32 {
         let input_lower = input.to_lowercase();
-        let mut score = 0.0;
+        let mut score: f32 = 0.0;
 
-        // Strong delegation indicators
-        let strong_indicators = ["review", "analyze", "check", "test", "debug", "fix", "optimize"];
-        let strong_matches = strong_indicators
-            .iter()
-            .filter(|&&keyword| input_lower.contains(keyword))
-            .count() as f32;
-        score += strong_matches * 0.3;
+        // Strong delegation indicators with word boundary matching
+        let strong_indicators = [
+            ("review", 0.4),
+            ("analyze", 0.4),
+            ("check", 0.3),
+            ("test", 0.3),
+            ("debug", 0.4),
+            ("fix", 0.4),
+            ("optimize", 0.4),
+            ("refactor", 0.4),
+            ("validate", 0.3),
+            ("verify", 0.3),
+            ("inspect", 0.3),
+        ];
+
+        for (keyword, weight) in &strong_indicators {
+            let word_pattern = format!(r"\b{}\b", regex::escape(keyword));
+            if let Ok(regex) = Regex::new(&word_pattern) {
+                if regex.is_match(&input_lower) {
+                    score += weight;
+                }
+            } else if input_lower.contains(keyword) {
+                score += weight * 0.7; // Reduced score for partial matches
+            }
+        }
 
         // Weak delegation indicators
-        let weak_indicators = ["help", "assist", "look", "examine"];
-        let weak_matches = weak_indicators
-            .iter()
-            .filter(|&&keyword| input_lower.contains(keyword))
-            .count() as f32;
-        score += weak_matches * 0.1;
+        let weak_indicators = [
+            ("help", 0.15),
+            ("assist", 0.15),
+            ("look", 0.1),
+            ("examine", 0.2),
+            ("show", 0.1),
+            ("explain", 0.15),
+            ("guide", 0.2),
+        ];
 
-        // Explicit delegation words
-        let explicit_words = ["delegate", "agent", "use"];
-        let explicit_matches = explicit_words
-            .iter()
-            .filter(|&&keyword| input_lower.contains(keyword))
-            .count() as f32;
-        score += explicit_matches * 0.4;
+        for (keyword, weight) in &weak_indicators {
+            let word_pattern = format!(r"\b{}\b", regex::escape(keyword));
+            if let Ok(regex) = Regex::new(&word_pattern) {
+                if regex.is_match(&input_lower) {
+                    score += weight;
+                }
+            }
+        }
+
+        // Explicit delegation phrases (higher weight)
+        let explicit_patterns = [
+            (r"\bdelegate\s+to\b", 0.8),
+            (r"\buse\s+\w+\s+agent\b", 0.7),
+            (r"\bask\s+\w+\s+to\b", 0.6),
+            (r"\b\w+\s+agent:\b", 0.7),
+            (r"\bcan\s+you\s+(review|analyze|check|test)\b", 0.5),
+        ];
+
+        for (pattern, weight) in &explicit_patterns {
+            if let Ok(regex) = Regex::new(pattern) {
+                if regex.is_match(&input_lower) {
+                    score += weight;
+                }
+            }
+        }
+
+        // Question patterns that suggest delegation
+        let question_patterns = [
+            (r"\bwhat\s+(is|are)\s+wrong\b", 0.3),
+            (r"\bhow\s+(can|do)\s+i\s+(fix|improve)\b", 0.4),
+            (r"\bwhy\s+(is|does)\b.*\b(not\s+work|fail|error)\b", 0.4),
+        ];
+
+        for (pattern, weight) in &question_patterns {
+            if let Ok(regex) = Regex::new(pattern) {
+                if regex.is_match(&input_lower) {
+                    score += weight;
+                }
+            }
+        }
+
+        // Technical context indicators
+        if input_lower.contains("code")
+            || input_lower.contains("function")
+            || input_lower.contains("class")
+            || input_lower.contains("method")
+        {
+            score += 0.2;
+        }
+
+        // File extension context
+        if Regex::new(r"\.\w{2,4}\b").unwrap().is_match(&input_lower) {
+            score += 0.1; // Mentions file extensions
+        }
 
         // Cap at 1.0
         score.min(1.0)
@@ -145,24 +273,86 @@ impl RequestAnalyzer {
             let mut score: f32 = 0.0;
             let input_lower = input.to_lowercase();
 
-            // Check delegation keywords
+            // Check delegation configuration
             if let Some(delegation) = &agent.delegation {
+                // Enhanced keyword matching with word boundaries and context
                 for keyword in &delegation.keywords {
-                    if input_lower.contains(&keyword.to_lowercase()) {
-                        score += 0.3;
+                    let keyword_lower = keyword.to_lowercase();
+
+                    // Exact word match (higher score)
+                    let word_boundary_pattern = format!(r"\b{}\b", regex::escape(&keyword_lower));
+                    if let Ok(regex) = Regex::new(&word_boundary_pattern) {
+                        if regex.is_match(&input_lower) {
+                            score += 0.4; // Higher score for exact word matches
+                            continue;
+                        }
+                    }
+
+                    // Partial match (lower score)
+                    if input_lower.contains(&keyword_lower) {
+                        score += 0.2;
                     }
                 }
+
+                // Enhanced pattern matching with task patterns
+                for pattern in &delegation.task_patterns {
+                    if let Ok(regex) = Regex::new(pattern) {
+                        if regex.is_match(&input_lower) {
+                            score += 0.5; // Task patterns get higher weight
+                        }
+                    }
+                }
+
+                // Priority-based scoring boost
+                let priority_boost = (delegation.priority as f32) / 100.0; // 0.01-0.10 boost
+                score += priority_boost;
             }
 
-            // Agent name mentioned
-            if input_lower.contains(&agent_name.to_lowercase()) {
-                score += 0.5;
+            // Agent name mentioned (with word boundaries)
+            let name_pattern = format!(r"\b{}\b", regex::escape(&agent_name.to_lowercase()));
+            if let Ok(regex) = Regex::new(&name_pattern) {
+                if regex.is_match(&input_lower) {
+                    score += 0.6; // High score for explicit agent name mention
+                }
+            } else if input_lower.contains(&agent_name.to_lowercase()) {
+                score += 0.3; // Lower score for partial name match
             }
+
+            // Contextual scoring based on input characteristics
+            score += Self::calculate_contextual_score(&input_lower, agent_name);
 
             score.min(1.0)
         } else {
             0.0
         }
+    }
+
+    /// Calculate contextual score based on input characteristics and agent specialization
+    fn calculate_contextual_score(input_lower: &str, agent_name: &str) -> f32 {
+        let mut contextual_score = 0.0;
+
+        // Code-related context
+        if (input_lower.contains("code") || input_lower.contains("function") || input_lower.contains("class"))
+            && (agent_name.contains("code") || agent_name.contains("review") || agent_name.contains("dev"))
+        {
+            contextual_score += 0.2;
+        }
+
+        // Documentation context
+        if (input_lower.contains("document") || input_lower.contains("readme") || input_lower.contains("docs"))
+            && (agent_name.contains("doc") || agent_name.contains("write"))
+        {
+            contextual_score += 0.2;
+        }
+
+        // Testing context
+        if (input_lower.contains("test") || input_lower.contains("spec") || input_lower.contains("unit"))
+            && (agent_name.contains("test") || agent_name.contains("qa"))
+        {
+            contextual_score += 0.2;
+        }
+
+        contextual_score
     }
 
     pub fn extract_explicit_agent(&self, input: &str) -> Option<String> {
@@ -277,8 +467,8 @@ mod tests {
         let registry = create_test_registry();
         let analyzer = RequestAnalyzer::new(registry);
 
-        // "use agent to review" should exceed 0.6 threshold
-        match analyzer.analyze("use agent to review this code") {
+        // "please review this code" should exceed 0.6 threshold (review=0.4 + can you=0.5)
+        match analyzer.analyze("can you review this code please") {
             DelegationIntent::AutoDelegate(candidates) => assert!(!candidates.is_empty()),
             _ => panic!("Expected AutoDelegate"),
         }
@@ -365,8 +555,8 @@ mod tests {
         let registry = create_test_registry();
         let analyzer = RequestAnalyzer::new(registry);
 
-        // "use agent to review" = 0.4 (use) + 0.4 (agent) + 0.3 (review) = 1.0 (capped) > 0.6
-        assert!(analyzer.should_auto_delegate("use agent to review this code"));
+        // "can you review" = 0.5 (can you pattern) + 0.4 (review) = 0.9 > 0.6
+        assert!(analyzer.should_auto_delegate("can you review this code"));
         assert!(!analyzer.should_auto_delegate("hello world"));
     }
 
