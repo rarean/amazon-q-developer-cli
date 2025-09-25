@@ -11,6 +11,8 @@ Run the following clippy, tests, format, and fix related errors
 3. Step 3: `cargo clippy --locked -p chat_cli --color always -- -D warnings`
 4. Step 4: `cargo test --locked -p chat_cli`
 5. Step 5: `cargo test --locked --workspace --lib --bins --test '*' --exclude fig_desktop-fuzz`
+6. Step 6: `cargo test --locked -p chat_cli -- --include-ignored` (run ignored/performance tests)
+7. Step 7: `cargo test --locked --workspace -- test_delegation_decision_performance test_delegation_performance` (specific performance tests)
 
 ## Context
 

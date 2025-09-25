@@ -569,7 +569,7 @@ mod tests {
         let command = format!("cat > {}", test_file_str);
         #[cfg(windows)]
         let command = format!(
-            "powershell -Command \"$input | Out-File -FilePath '{}'\"",
+            "powershell -Command \"$input | Out-File -FilePath '{}' -Encoding UTF8\"",
             test_file_str
         );
 

@@ -1,6 +1,7 @@
 pub mod analyzer;
 pub mod context_isolator;
 pub mod delegation;
+pub mod delegation_ui;
 pub mod delegator;
 pub mod hook;
 mod legacy;
