@@ -61,6 +61,19 @@ pub enum AgentsSubcommand {
     Clear,
 }
 
+#[derive(Debug, PartialEq, clap::Subcommand)]
+pub enum DelegateSubcommand {
+    /// Delegate task to specific agent
+    To {
+        /// Agent name to delegate to
+        agent: String,
+        /// Task description (optional)
+        task: Vec<String>,
+    },
+    /// List available agents for delegation
+    List,
+}
+
 /// q (Amazon Q Chat)
 #[derive(Debug, PartialEq, Parser)]
 #[command(color = clap::ColorChoice::Always, term_width = 0, after_long_help = EXTRA_HELP)]
@@ -85,6 +98,9 @@ pub enum SlashCommand {
     /// (Beta) Manage custom commands. Requires "q settings chat.enableCommands true"
     #[command(subcommand, hide = true)]
     Commands(CommandsSubcommand), // NEW: Add Commands subcommand
+    /// Delegate tasks to specialized agents
+    #[command(subcommand)]
+    Delegate(DelegateSubcommand),
     /// (Beta) Manage prompt themes. Requires enabling themes experiment
     #[command(subcommand, hide = true)]
     Themes(ThemesSubcommand),
@@ -125,13 +141,6 @@ pub enum SlashCommand {
     /// View, manage, and resume to-do lists
     #[command(subcommand)]
     Todos(TodoSubcommand),
-    /// Delegate task to specific agent
-    Delegate {
-        /// Agent name to delegate to
-        agent: String,
-        /// Optional task description
-        task: Option<String>,
-    },
     /// Manage agent delegation
     #[command(subcommand)]
     Agents(AgentsSubcommand),
@@ -169,6 +178,7 @@ impl SlashCommand {
             Self::Context(args) => args.execute(os, session).await,
             Self::Knowledge(subcommand) => subcommand.execute(os, session).await,
             Self::Commands(subcommand) => subcommand.execute(os, session).await, // NEW: Add Commands execution
+            Self::Delegate(subcommand) => subcommand.execute(os, session).await,
             Self::Themes(subcommand) => subcommand.execute(os, session).await,
             Self::PromptEditor(args) => args.execute(session).await,
             Self::Compact(args) => args.execute(os, session).await,
@@ -202,30 +212,6 @@ impl SlashCommand {
             //     })
             // },
             Self::Todos(subcommand) => subcommand.execute(os, session).await,
-            Self::Delegate { agent, task } => {
-                use crate::cli::chat::delegation_commands::DelegationCommandHandler;
-                let task_str = task.unwrap_or_else(|| "Ready for delegation".to_string());
-                let result = DelegationCommandHandler::handle_command(
-                    "delegate",
-                    &[&agent, &task_str],
-                    &mut session.delegation_manager,
-                )?;
-
-                use crossterm::{
-                    queue,
-                    style,
-                };
-                queue!(
-                    session.stderr,
-                    style::SetForegroundColor(style::Color::Green),
-                    style::Print(format!("{}\n", result)),
-                    style::SetForegroundColor(style::Color::Reset)
-                )?;
-
-                Ok(ChatState::PromptUser {
-                    skip_printing_tools: false,
-                })
-            },
             Self::Agents(subcommand) => {
                 use crate::cli::chat::delegation_commands::DelegationCommandHandler;
                 let args = match subcommand {
@@ -283,7 +269,7 @@ impl SlashCommand {
                 PersistSubcommand::Load { .. } => "load",
             },
             Self::Todos(_) => "todos",
-            Self::Delegate { .. } => "delegate",
+            Self::Delegate(_) => "delegate",
             Self::Agents(_) => "agents",
         }
     }
@@ -296,6 +282,44 @@ impl SlashCommand {
             SlashCommand::Tools(arg) => arg.subcommand_name(),
             SlashCommand::Prompts(arg) => arg.subcommand_name(),
             _ => None,
+        }
+    }
+}
+
+impl DelegateSubcommand {
+    pub async fn execute(self, _os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        use crate::cli::chat::delegation_commands::DelegationCommandHandler;
+
+        let result = match self {
+            DelegateSubcommand::To { agent, task } => {
+                let task_str = if task.is_empty() {
+                    "Ready for delegation".to_string()
+                } else {
+                    task.join(" ")
+                };
+                let args = vec![agent.as_str(), task_str.as_str()];
+                DelegationCommandHandler::handle_command("delegate", &args, &mut session.delegation_manager)
+            },
+            DelegateSubcommand::List => {
+                DelegationCommandHandler::handle_command("agents", &[], &mut session.delegation_manager)
+            },
+        };
+
+        match result {
+            Ok(message) => {
+                session.conversation.append_transcript(message);
+                Ok(ChatState::PromptUser {
+                    skip_printing_tools: false,
+                })
+            },
+            Err(err) => {
+                session
+                    .conversation
+                    .append_transcript(format!("Delegation error: {}", err));
+                Ok(ChatState::PromptUser {
+                    skip_printing_tools: false,
+                })
+            },
         }
     }
 }
