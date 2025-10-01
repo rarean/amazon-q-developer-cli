@@ -836,13 +836,22 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_highlight_prompt_with_ansi_sequences() {
+    #[tokio::test]
+    async fn test_highlight_prompt_with_ansi_sequences() {
         let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(1);
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
+
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
+
         let helper = ChatHelper {
-            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true, PathBuf::new()),
+            completer: ChatCompleter::new(
+                prompt_request_sender,
+                prompt_response_receiver,
+                available_commands.clone(),
+            ),
+            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
             validator: MultiLineValidator,
         };
 
@@ -857,8 +866,8 @@ mod tests {
         assert_eq!(highlighted2, complex_themed_prompt);
     }
 
-    #[test]
-    fn test_chat_hinter_command_hint() {
+    #[tokio::test]
+    async fn test_chat_hinter_command_hint() {
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
         let hinter = ChatHinter::new(true, PathBuf::new(), available_commands);

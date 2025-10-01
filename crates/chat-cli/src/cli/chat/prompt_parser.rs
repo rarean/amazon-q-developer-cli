@@ -42,7 +42,7 @@ pub fn generate_themed_prompt(
     }
 
     // Fallback to existing implementation
-    generate_prompt(current_profile, warning, tangent_mode)
+    generate_prompt(current_profile, warning, tangent_mode, None)
 }
 
 /// Detect git information for the current directory

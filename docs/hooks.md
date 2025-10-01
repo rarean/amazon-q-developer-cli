@@ -1,6 +1,6 @@
 # Hooks
 
-Hooks allow you to execute custom commands at specific points during agent lifecycle and tool execution. This enables security validation, logging, formatting, context gathering, and other custom behaviors.
+Hooks allow you to execute commands at specific points during agent lifecycle and tool execution. This enables security validation, logging, formatting, context gathering, and other custom behaviors.
 
 ## Defining Hooks
 
