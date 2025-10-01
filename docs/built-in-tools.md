@@ -8,7 +8,6 @@ Amazon Q CLI includes several built-in tools that agents can use. This document 
 - [`introspect`](#introspect-tool) — Provide information about Q CLI capabilities and documentation.
 - [`report_issue`](#report_issue-tool) — Open a GitHub issue template.
 - [`knowledge`](#knowledge-tool) — Store and retrieve information in a knowledge base.
-- [`commands`](#commands-tool) — Manage custom commands within the chat session.
 - [`thinking`](#thinking-tool) — Internal reasoning mechanism.
 - [`todo_list`](#todo_list-tool) — Create and manage TODO lists for tracking multi-step tasks.
 - [`use_aws`](#use_aws-tool) — Make AWS CLI API calls.
@@ -118,34 +117,6 @@ This tool has no configuration options.
 Store and retrieve information in a knowledge base across chat sessions. Provides semantic search capabilities for files, directories, and text content.
 
 This tool has no configuration options.
-
-## Commands Tool
-
-Manage custom commands within the chat session. This tool provides the underlying functionality for the `/commands` command system, allowing creation, modification, and execution of custom command templates.
-
-### Configuration
-
-The Commands tool itself has no direct configuration options, but its availability is controlled by a global setting:
-
-```bash
-q settings chat.enableCommands true
-```
-
-### Usage
-
-The Commands tool is used internally by the `/commands` command system:
-
-- `/commands add <name>` - Create new custom commands
-- `/commands show` - List available commands  
-- `/commands remove <name>` - Delete commands
-- `/commands update <name>` - Edit existing commands
-- `/commands clear` - Remove multiple commands
-
-Custom commands can then be executed using:
-- `/project:<name>` - Execute project-scoped commands
-- `/user:<name>` - Execute user-scoped commands
-
-See the [Custom Commands documentation](./custom-commands.md) for detailed usage information.
 
 ## Thinking Tool
 

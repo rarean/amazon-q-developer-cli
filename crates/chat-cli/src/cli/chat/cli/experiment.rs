@@ -18,16 +18,19 @@ use crate::cli::chat::{
     ChatState,
 };
 use crate::cli::experiment::experiment_manager::ExperimentManager;
+use crate::database::settings::Setting;
 use crate::os::Os;
 
 /// Represents an experimental feature that can be toggled
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct Experiment {
     name: &'static str,
     description: &'static str,
     setting_key: Setting,
 }
 
+#[allow(dead_code)]
 static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
     Experiment {
         name: "Knowledge",
@@ -48,11 +51,6 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         name: "Todo Lists",
         description: "Enables Q to create todo lists that can be viewed and managed using /todos",
         setting_key: Setting::EnabledTodoList,
-    },
-    Experiment {
-        name: "Custom Commands",
-        description: "Enables user-defined custom commands (/commands, /project:name, /user:name)",
-        setting_key: Setting::EnabledCommands,
     },
     Experiment {
         name: "Themes",
