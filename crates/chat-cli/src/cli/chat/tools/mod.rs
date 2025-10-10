@@ -142,7 +142,7 @@ impl Tool {
         line_tracker: &mut HashMap<String, FileLineTracker>,
         agents: &crate::cli::agent::Agents,
     ) -> Result<InvokeOutput> {
-        let active_agent = agents.get_active();
+        let _active_agent = agents.get_active();
         match self {
             Tool::FsRead(fs_read) => fs_read.invoke(os, stdout).await,
             Tool::FsWrite(fs_write) => fs_write.invoke(os, stdout, line_tracker).await,
@@ -151,7 +151,7 @@ impl Tool {
             Tool::Custom(custom_tool) => custom_tool.invoke(os, stdout).await,
             Tool::GhIssue(gh_issue) => gh_issue.invoke(os, stdout).await,
             Tool::Introspect(introspect) => introspect.invoke(os, stdout).await,
-            Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout, agent).await,
+            Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout, None).await,
             Tool::Thinking(think) => think.invoke(stdout).await,
             Tool::Todo(todo) => todo.invoke(os, stdout).await,
             Tool::Delegate(delegate) => delegate.invoke(os, stdout, agents).await,

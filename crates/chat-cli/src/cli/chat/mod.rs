@@ -1,4 +1,5 @@
 use crate::theme::StyledText;
+use crossterm::style::Color;
 pub mod cli;
 mod consts;
 pub mod context;
@@ -3471,18 +3472,8 @@ impl ChatSession {
             None
         };
 
-        let mut generated_prompt =
-            prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode, usage_percentage);
-
-        if ExperimentManager::is_enabled(os, ExperimentName::Delegate) && status_all_agents(os).await.is_ok() {
-            generated_prompt = format!("{DELEGATE_NOTIFIER}\n{generated_prompt}");
-        }
-
-        generated_prompt
-        prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode, usage_percentage)
-
         // Use themed prompt if available, otherwise fallback to default
-        prompt_parser::generate_themed_prompt(
+        let mut generated_prompt = prompt_parser::generate_themed_prompt(
             profile.as_deref(),
             !all_trusted, // warning should be true when not all tools are trusted
             tangent_mode,
@@ -3492,7 +3483,13 @@ impl ChatSession {
                 .model_info
                 .as_ref()
                 .and_then(|m| m.model_name.as_deref()),
-        )
+        );
+
+        if ExperimentManager::is_enabled(os, ExperimentName::Delegate) && status_all_agents(os).await.is_ok() {
+            generated_prompt = format!("{DELEGATE_NOTIFIER}\n{generated_prompt}");
+        }
+
+        generated_prompt
     }
 
     /// Update the token usage percentage for display in themed prompts

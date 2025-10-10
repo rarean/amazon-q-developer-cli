@@ -62,6 +62,7 @@ mod tests {
             url: String::new(),
             headers: HashMap::new(),
             oauth_scopes: Vec::new(),
+            oauth: None,
             command: "test_command".to_string(),
             args: Vec::new(),
             env: Some(HashMap::new()),

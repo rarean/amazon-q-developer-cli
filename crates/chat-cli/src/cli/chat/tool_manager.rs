@@ -730,11 +730,7 @@ impl ToolManager {
                 tool_specs.remove("todo_list");
             }
             if !crate::cli::chat::tools::delegate::Delegate::is_enabled(os) {
-            }
                 tool_specs.remove("delegate");
-            if !crate::cli::chat::tools::commands::Commands::is_enabled(os) {
-                // NEW: Add commands filtering
-                tool_specs.remove("commands");
             }
 
             #[cfg(windows)]
@@ -883,9 +879,6 @@ impl ToolManager {
             "todo_list" => Tool::Todo(serde_json::from_value::<TodoList>(value.args).map_err(map_err)?),
             // Note that this name is NO LONGER namespaced with server_name{DELIMITER}tool_name
             "delegate" => Tool::Delegate(serde_json::from_value::<Delegate>(value.args).map_err(map_err)?),
-            "commands" => Tool::Commands(
-                serde_json::from_value::<crate::cli::chat::tools::commands::Commands>(value.args).map_err(map_err)?,
-            ), // NEW: Add commands parsing
             // Note that this name is namespaced with server_name{DELIMITER}tool_name
             name => {
                 // Note: tn_map also has tools that underwent no transformation. In otherwords, if
